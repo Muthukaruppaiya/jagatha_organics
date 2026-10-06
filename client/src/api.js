@@ -1,6 +1,12 @@
 async function request(url, options) {
   const response = await fetch(url, options);
-  const data = await response.json().catch(() => ({}));
+  const text = await response.text();
+  let data;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error('Request failed');
+  }
   if (!response.ok) throw new Error(data.error || 'Request failed');
   return data;
 }
@@ -39,10 +45,22 @@ async function orCatalog(load, pick) {
 }
 
 export const api = {
-  categories: () => orCatalog(() => request('/api/categories'), (catalog) => catalog.categories),
-  products: () => orCatalog(() => request('/api/products'), (catalog) => catalog.products),
+  categories: () => orCatalog(async () => {
+    const data = await request('/api/categories');
+    if (!Array.isArray(data)) throw new Error('Request failed');
+    return data;
+  }, (catalog) => catalog.categories),
+  products: () => orCatalog(async () => {
+    const data = await request('/api/products');
+    if (!Array.isArray(data)) throw new Error('Request failed');
+    return data;
+  }, (catalog) => catalog.products),
   product: (slug) => orCatalog(
-    () => request(`/api/products/${slug}`),
+    async () => {
+      const data = await request(`/api/products/${slug}`);
+      if (!data?.slug) throw new Error('Request failed');
+      return data;
+    },
     (catalog) => {
       const product = catalog.products.find((item) => item.slug === slug);
       if (!product) throw new Error('That product is not on the shelf.');

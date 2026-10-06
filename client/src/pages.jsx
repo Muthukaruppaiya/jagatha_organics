@@ -15,8 +15,8 @@ function useCatalog() {
     Promise.all([api.products(), api.categories()])
       .then(([nextProducts, nextCategories]) => {
         if (!live) return;
-        setProducts(nextProducts);
-        setCategories(nextCategories);
+        setProducts(Array.isArray(nextProducts) ? nextProducts : []);
+        setCategories(Array.isArray(nextCategories) ? nextCategories : []);
       })
       .catch((err) => live && setError(err.message))
       .finally(() => live && setLoading(false));
