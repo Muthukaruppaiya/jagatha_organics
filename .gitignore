@@ -1,0 +1,8 @@
+node_modules
+dist
+server/data
+server/.env
+reference/product-images/uploads
+reference/videos
+.DS_Store
+*.log

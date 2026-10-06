@@ -1,0 +1,12 @@
+{
+  "name": "jagatha-organics",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n api,web -c green,cyan \"npm run start --prefix server\" \"npm run dev --prefix client\"",
+    "start": "npm run start --prefix server",
+    "build": "npm run build --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

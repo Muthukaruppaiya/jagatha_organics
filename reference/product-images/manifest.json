@@ -1,0 +1,266 @@
+[
+  {
+    "name": "Mixed Protein Bars",
+    "slug": "mixed-protein-bars-2",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "mixed-protein-bars-2-1.webp, mixed-protein-bars-2-2.webp"
+  },
+  {
+    "name": "Mixed Laddu Box",
+    "slug": "mixed-laddu-box",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "mixed-laddu-box-1.webp, mixed-laddu-box-2.webp"
+  },
+  {
+    "name": "Sweet &#038; Snacks Gift Box",
+    "slug": "sweet-snacks-gift-box",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "sweet-snacks-gift-box-1.webp, sweet-snacks-gift-box-2.webp"
+  },
+  {
+    "name": "Healthy Weight Gain Gift Box",
+    "slug": "healthy-weight-gain-gift-box",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "healthy-weight-gain-gift-box-1.webp, healthy-weight-gain-gift-box-2.webp"
+  },
+  {
+    "name": "Kids Special Snack Gift Box",
+    "slug": "kids-special-snack-gift-box",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "kids-special-snack-gift-box-1.webp, kids-special-snack-gift-box-2.webp"
+  },
+  {
+    "name": "Energy Enrichment Gift Box",
+    "slug": "energy-enrichment-gift-box",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "energy-enrichment-gift-box-1.webp, energy-enrichment-gift-box-2.webp"
+  },
+  {
+    "name": "Herbals &#038; Millets Gift Box",
+    "slug": "herbals-millets-gift-box",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "herbals-millets-gift-box-1.webp, herbals-millets-gift-box-2.webp"
+  },
+  {
+    "name": "Bone &#038; Muscle Strengthen Gift Box",
+    "slug": "bone-muscle-strengthen-gift-box",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "bone-muscle-strengthen-gift-box-1.webp, bone-muscle-strengthen-gift-box-2.webp"
+  },
+  {
+    "name": "Strength Builder Gift Box",
+    "slug": "strength-builder-gift-box",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "strength-builder-gift-box-1.webp, strength-builder-gift-box-2.webp"
+  },
+  {
+    "name": "Biotin Gift Box",
+    "slug": "biotin-gift-box",
+    "category": "Combo, Gift Box, Protein Bars",
+    "images": "biotin-gift-box-1.png, biotin-gift-box-2.png"
+  },
+  {
+    "name": "Mixed Protein Bars",
+    "slug": "mixed-protein-bars",
+    "category": "Combo, Protein Bars",
+    "images": "mixed-protein-bars-1.jpg, mixed-protein-bars-2.jpg"
+  },
+  {
+    "name": "Thooyamalli Rice Ribbon Twist",
+    "slug": "thooyamalli-rice-ribbon-twist",
+    "category": "Snacks",
+    "images": "thooyamalli-rice-ribbon-twist-1.png"
+  },
+  {
+    "name": "Kaatuyanam Rice Crunchy Sev",
+    "slug": "kaatuyanam-rice-crunchy-sev",
+    "category": "Snacks",
+    "images": "kaatuyanam-rice-crunchy-sev-1.png, kaatuyanam-rice-crunchy-sev-2.png"
+  },
+  {
+    "name": "Kichili-Samba Rice Ribbon Snacks",
+    "slug": "kichili-samba-rice-ribbon-snacks",
+    "category": "Snacks",
+    "images": "kichili-samba-rice-ribbon-snacks-1.png, kichili-samba-rice-ribbon-snacks-2.png"
+  },
+  {
+    "name": "Thinai Millet Murukku",
+    "slug": "thinai-millet-murukku",
+    "category": "Snacks",
+    "images": "thinai-millet-murukku-1.png, thinai-millet-murukku-2.png"
+  },
+  {
+    "name": "Poongar Rice Karasev",
+    "slug": "poongar-rice-karasev",
+    "category": "Snacks",
+    "images": "poongar-rice-karasev-1.png, poongar-rice-karasev-2.png"
+  },
+  {
+    "name": "Kambu Ragi Millet Mixture",
+    "slug": "kambu-ragi-millet-mixture",
+    "category": "Snacks",
+    "images": "kambu-ragi-millet-mixture-1.png, kambu-ragi-millet-mixture-2.png"
+  },
+  {
+    "name": "Karuppu Kavuni Rice Murukku",
+    "slug": "karuppu-kavuni-rice-murukku",
+    "category": "Snacks",
+    "images": "karuppu-kavuni-rice-murukku-1.png, karuppu-kavuni-rice-murukku-2.png"
+  },
+  {
+    "name": "Joint Strength Balls",
+    "slug": "joint-strength-balls",
+    "category": "Energy Delight",
+    "images": "joint-strength-balls-1.png, joint-strength-balls-2.png"
+  },
+  {
+    "name": "Keezhanelli Kuthiraivalli",
+    "slug": "keezhanelli-kuthiraivalli",
+    "category": "Energy Delight",
+    "images": "keezhanelli-kuthiraivalli-1.png, keezhanelli-kuthiraivalli-2.png"
+  },
+  {
+    "name": "Karisalankanni Samai",
+    "slug": "karisalankanni-samai",
+    "category": "Energy Delight",
+    "images": "karisalankanni-samai-1.png, karisalankanni-samai-2.png"
+  },
+  {
+    "name": "Rose Flower Cholam",
+    "slug": "rose-flower-cholam",
+    "category": "Energy Delight",
+    "images": "rose-flower-cholam-1.png, rose-flower-cholam-2.png"
+  },
+  {
+    "name": "Choco Kambu",
+    "slug": "choco-kambu",
+    "category": "Energy Delight",
+    "images": "choco-kambu-1.png, choco-kambu-2.png"
+  },
+  {
+    "name": "Choco Ragi",
+    "slug": "choco-ragi",
+    "category": "Energy Delight",
+    "images": "choco-ragi-1.png, choco-ragi-2.png"
+  },
+  {
+    "name": "Mudakathan Varagu",
+    "slug": "mudakathan-varagu",
+    "category": "Energy Delight",
+    "images": "mudakathan-varagu-1.png, mudakathan-varagu-2.png"
+  },
+  {
+    "name": "Pirandai Ragi",
+    "slug": "pirandai-ragi",
+    "category": "Energy Delight",
+    "images": "pirandai-ragi-1.png, pirandai-ragi-2.png"
+  },
+  {
+    "name": "Athimadhuram Cashew",
+    "slug": "athimadhuram-cashew",
+    "category": "Energy Delight",
+    "images": "athimadhuram-cashew-1.png, athimadhuram-cashew-2.png"
+  },
+  {
+    "name": "Ashwagandha Badam",
+    "slug": "ashwagandha-badam",
+    "category": "Energy Delight",
+    "images": "ashwagandha-badam-1.png, ashwagandha-badam-2.png"
+  },
+  {
+    "name": "ABC Malt",
+    "slug": "abc-malt",
+    "category": "Snacks",
+    "images": "abc-malt-1.webp"
+  },
+  {
+    "name": "Dry Fruits Nut Seeds Cutlet",
+    "slug": "dry-fruits-nut-seeds-cutlet-2",
+    "category": "No Sugar No Jaggery",
+    "images": "dry-fruits-nut-seeds-cutlet-2-1.webp, dry-fruits-nut-seeds-cutlet-2-2.jpg"
+  },
+  {
+    "name": "9 Seeds / Biotin Laddu",
+    "slug": "9-seeds-laddu-2",
+    "category": "No Sugar No Jaggery",
+    "images": "9-seeds-laddu-2-1.webp, 9-seeds-laddu-2-2.jpg"
+  },
+  {
+    "name": "Moringa Protein Bar",
+    "slug": "moringa-protein-bar",
+    "category": "No Sugar No Jaggery",
+    "images": "moringa-protein-bar-1.webp, moringa-protein-bar-2.png"
+  },
+  {
+    "name": "Amla Protein Bar",
+    "slug": "amla-protein-bar-2",
+    "category": "No Sugar No Jaggery",
+    "images": "amla-protein-bar-2-1.webp, amla-protein-bar-2-2.png"
+  },
+  {
+    "name": "Avarampoo Protein Bar",
+    "slug": "avarampoo-protein-bar-2",
+    "category": "No Sugar No Jaggery",
+    "images": "avarampoo-protein-bar-2-1.webp, avarampoo-protein-bar-2-2.png"
+  },
+  {
+    "name": "Curry Leaves Protein Bar",
+    "slug": "curry-leaves-protein-bar-2",
+    "category": "No Sugar No Jaggery",
+    "images": "curry-leaves-protein-bar-2-1.webp, curry-leaves-protein-bar-2-2.png"
+  },
+  {
+    "name": "Mudavattukaal Protein Bar",
+    "slug": "mudavattukaal-protein-bar",
+    "category": "No Sugar No Jaggery",
+    "images": "mudavattukaal-protein-bar-1.webp, mudavattukaal-protein-bar-2.png"
+  },
+  {
+    "name": "Black Ulundhu Laddu",
+    "slug": "black-ulundhu-laddu",
+    "category": "Laddu",
+    "images": "black-ulundhu-laddu-1.png, black-ulundhu-laddu-2.png"
+  },
+  {
+    "name": "9 Millets Laddu",
+    "slug": "9-millets-laddu-2",
+    "category": "Laddu",
+    "images": "9-millets-laddu-2-1.png, 9-millets-laddu-2-2.png"
+  },
+  {
+    "name": "Navadhanya Laddu",
+    "slug": "navadhanya-laddu-2",
+    "category": "Laddu",
+    "images": "navadhanya-laddu-2-1.png, navadhanya-laddu-2-2.png"
+  },
+  {
+    "name": "Black Sesame Laddu",
+    "slug": "black-sesame-laddu-2",
+    "category": "Laddu",
+    "images": "black-sesame-laddu-2-1.png, black-sesame-laddu-2-2.png"
+  },
+  {
+    "name": "White Sesame Laddu",
+    "slug": "white-sesame-laddu",
+    "category": "Laddu",
+    "images": "white-sesame-laddu-1.png, white-sesame-laddu-2.png"
+  },
+  {
+    "name": "Peanut Laddu",
+    "slug": "peanut-laddu-2",
+    "category": "Laddu",
+    "images": "peanut-laddu-2-1.png, peanut-laddu-2-2.png"
+  },
+  {
+    "name": "Mappillai Samba Rice Murukku",
+    "slug": "mappillai-samba-murukku-2",
+    "category": "Snacks",
+    "images": "mappillai-samba-murukku-2-1.png, mappillai-samba-murukku-2-2.png"
+  },
+  {
+    "name": "Varagu Millet Ribbon Pakoda",
+    "slug": "varagu-millet-ribbon-pakoda",
+    "category": "Snacks",
+    "images": "varagu-millet-ribbon-pakoda-1.png, varagu-millet-ribbon-pakoda-2.png"
+  }
+]
