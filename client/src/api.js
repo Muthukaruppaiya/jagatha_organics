@@ -15,10 +15,40 @@ function customerHeaders() {
   return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
+let catalogPromise;
+function staticCatalog() {
+  if (!catalogPromise) {
+    catalogPromise = fetch('/catalog.json').then((response) => {
+      if (!response.ok) throw new Error('Shop is unavailable');
+      return response.json();
+    });
+  }
+  return catalogPromise;
+}
+
+async function orCatalog(load, pick) {
+  try {
+    return await load();
+  } catch (error) {
+    try {
+      return pick(await staticCatalog());
+    } catch {
+      throw error;
+    }
+  }
+}
+
 export const api = {
-  categories: () => request('/api/categories'),
-  products: () => request('/api/products'),
-  product: (slug) => request(`/api/products/${slug}`),
+  categories: () => orCatalog(() => request('/api/categories'), (catalog) => catalog.categories),
+  products: () => orCatalog(() => request('/api/products'), (catalog) => catalog.products),
+  product: (slug) => orCatalog(
+    () => request(`/api/products/${slug}`),
+    (catalog) => {
+      const product = catalog.products.find((item) => item.slug === slug);
+      if (!product) throw new Error('That product is not on the shelf.');
+      return product;
+    },
+  ),
   createOrder: (body) => request('/api/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...customerHeaders() },

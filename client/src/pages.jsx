@@ -482,6 +482,25 @@ export function Checkout() {
       if (nextVia === 'whatsapp') window.open(whatsAppLink('', orderWhatsAppText(order)), '_blank', 'noopener,noreferrer');
       navigate(`/order/${order.orderNumber}`, { state: order });
     } catch (err) {
+      if (nextVia === 'whatsapp') {
+        const text = orderWhatsAppText({
+          orderNumber: 'on the website',
+          customerName: form.customerName,
+          phone: form.phone,
+          addressLine: form.addressLine,
+          city: form.city,
+          pincode: form.pincode,
+          totalPaise: cart.totalPaise,
+          items: cart.items.map((item) => ({
+            productName: item.name,
+            variantLabel: item.label,
+            quantity: item.quantity,
+          })),
+        });
+        window.open(whatsAppLink('', text), '_blank', 'noopener,noreferrer');
+        setError('WhatsApp is open with this order. The desk will confirm it from there.');
+        return;
+      }
       setError(err.message);
     } finally {
       setBusy(false);

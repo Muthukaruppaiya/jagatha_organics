@@ -4,5 +4,8 @@ server/data
 server/.env
 reference/product-images/uploads
 reference/videos
+client/public/media
+client/public/catalog.json
+.vercel
 .DS_Store
 *.log
