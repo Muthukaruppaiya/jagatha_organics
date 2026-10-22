@@ -171,6 +171,7 @@ export async function startDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_id INT REFERENCES customers(id);
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipping_paise INT NOT NULL DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS customer_addresses (
       id SERIAL PRIMARY KEY,

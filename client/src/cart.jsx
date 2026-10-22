@@ -27,21 +27,29 @@ export function CartProvider({ children }) {
       add(item) {
         setItems((current) => {
           const found = current.find((entry) => entry.variantId === item.variantId);
+          const cap = Number.isInteger(item.stockQty) ? Math.min(20, item.stockQty) : 20;
           if (found) {
+            const stockCap = Number.isInteger(found.stockQty) ? Math.min(20, found.stockQty) : cap;
             return current.map((entry) => (
               entry.variantId === item.variantId
-                ? { ...entry, quantity: Math.min(20, entry.quantity + item.quantity) }
+                ? {
+                  ...entry,
+                  quantity: Math.min(stockCap, entry.quantity + item.quantity),
+                  stockQty: Number.isInteger(item.stockQty) ? item.stockQty : entry.stockQty,
+                  grams: Number.isInteger(item.grams) ? item.grams : entry.grams,
+                }
                 : entry
             ));
           }
-          return [...current, item];
+          return [...current, { ...item, quantity: Math.min(cap, item.quantity) }];
         });
       },
       setQty(variantId, quantity) {
         setItems((current) => current.flatMap((entry) => {
           if (entry.variantId !== variantId) return [entry];
           if (quantity < 1) return [];
-          return [{ ...entry, quantity: Math.min(20, quantity) }];
+          const cap = Number.isInteger(entry.stockQty) ? Math.min(20, entry.stockQty) : 20;
+          return [{ ...entry, quantity: Math.min(cap, quantity) }];
         }));
       },
       remove(variantId) {

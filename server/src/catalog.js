@@ -1,4 +1,4 @@
-export const CATALOG_VERSION = '2026-10-product-list';
+export const CATALOG_VERSION = '2026-10-drive-images';
 
 export const categories = [
   { slug: 'no-sugar-no-jaggery', name: 'No Sugar No Jaggery', blurb: 'Bars, cutlets, and laddus made without sugar or jaggery.', sortOrder: 1 },
@@ -87,6 +87,15 @@ export const products = [
 ];
 
 export const banners = [
+  {
+    title: 'Biotin Gift Box',
+    subtitle: 'Hair and skin care combo: dry fruit cutlet, 9 seeds biotin laddu, curry leaves protein bar, and amla protein bar.',
+    buttonLabel: 'Shop the set',
+    link: '/shop/no-sugar-no-jaggery',
+    image: '/banner-images/biotin-gift-box.png',
+    productSlug: '',
+    variantLabel: '',
+  },
   {
     title: '9 Seeds Biotin Laddu',
     subtitle: 'A seed-heavy laddu made with nine seeds. No sugar and no jaggery added.',

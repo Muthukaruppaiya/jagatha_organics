@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { api, clearCustomer, inr, readCustomer, saveCustomer, sourceLabel, STATUS_LABEL, when } from './api.js';
+import { api, clearCustomer, forgetCustomer, inr, readCustomer, saveCustomer, sourceLabel, STATUS_LABEL, when } from './api.js';
 
 export function AccountLogin() {
   const navigate = useNavigate();
@@ -11,6 +11,7 @@ export function AccountLogin() {
   const [wait, setWait] = useState(0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [checking, setChecking] = useState(true);
 
   useEffect(() => {
     if (wait <= 0) return undefined;
@@ -18,6 +19,14 @@ export function AccountLogin() {
     return () => window.clearTimeout(timer);
   }, [wait]);
 
+  useEffect(() => {
+    api.accountMe()
+      .then((me) => saveCustomer(me))
+      .catch(() => forgetCustomer())
+      .finally(() => setChecking(false));
+  }, []);
+
+  if (checking) return <div className="wrap page narrow auth"><p className="muted">Opening your account…</p></div>;
   if (readCustomer()) return <Navigate to="/account" replace />;
 
   function set(key, value) {
@@ -78,7 +87,14 @@ export function AccountLogin() {
         {verifying ? (
           <>
             <p className="muted">Enter the 6-digit code sent to <b>{sent.email}</b>.</p>
-            {!sent.delivered && <p className="note">Email is not set up on this server yet, so the code was written to the server log.</p>}
+            {sent.code && (
+              <div className="otp-show">
+                <small>Your verification code</small>
+                <b>{sent.code}</b>
+                <small>{sent.delivered ? 'Also sent to your email.' : 'Shown here because email is not connected yet.'}</small>
+              </div>
+            )}
+            {!sent.code && !sent.delivered && <p className="note">Check your email for the 6-digit code. If it does not arrive, check spam or ask the kitchen to turn on on-screen codes.</p>}
             <input
               className="otp-input"
               value={code}
@@ -121,7 +137,9 @@ export function AccountLogin() {
 
 export function AccountHome() {
   const navigate = useNavigate();
-  const customer = readCustomer();
+  const [customer, setCustomer] = useState(() => readCustomer());
+  const [ready, setReady] = useState(Boolean(readCustomer()?.id));
+  const customerKey = customer?.email || '';
   const [orders, setOrders] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [reviews, setReviews] = useState([]);
@@ -133,9 +151,30 @@ export function AccountHome() {
   const [saved, setSaved] = useState('');
 
   useEffect(() => {
-    if (!customer) return;
+    let live = true;
+    api.accountMe()
+      .then((me) => {
+        if (!live) return;
+        saveCustomer(me);
+        setCustomer(me);
+        setReady(true);
+      })
+      .catch(() => {
+        if (!live) return;
+        forgetCustomer();
+        setCustomer(null);
+        setReady(true);
+      });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    const current = readCustomer();
+    if (!current) return;
+    let live = true;
     Promise.all([api.myOrders(), api.favorites(), api.myReviews(), api.products()])
       .then(([nextOrders, nextFavorites, nextReviews, nextProducts]) => {
+        if (!live) return;
         setOrders(nextOrders);
         setFavorites(nextFavorites);
         setReviews(nextReviews);
@@ -143,13 +182,16 @@ export function AccountHome() {
         setSlug(nextProducts[0]?.slug || '');
       })
       .catch((err) => {
+        if (!live) return;
         if (/sign in/i.test(err.message)) {
           clearCustomer();
           navigate('/account/login');
         } else setError(err.message);
       });
-  }, [customer, navigate]);
+    return () => { live = false; };
+  }, [customerKey, navigate]);
 
+  if (!ready) return <div className="wrap page"><p className="muted">Opening your account…</p></div>;
   if (!customer) return <Navigate to="/account/login" replace />;
 
   async function submitReview(event) {
@@ -199,7 +241,7 @@ export function AccountHome() {
                 ))}
               </ul>
               {order.courierName && <p className="muted">Courier {order.courierName} {order.trackingNumber}</p>}
-              <Link to={`/track?number=${order.orderNumber}&phone=${order.phone}`}>Track order</Link>
+              <Link to="/track">Track order</Link>
             </article>
           ))}
         </section>

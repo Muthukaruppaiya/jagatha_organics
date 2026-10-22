@@ -8,7 +8,8 @@ export function mailReady() {
 
 export async function sendMail({ to, subject, text, html }) {
   if (!mailReady()) {
-    if (process.env.NODE_ENV === 'production') {
+    const showOtp = String(process.env.SHOW_OTP || '').toLowerCase() === 'true';
+    if (process.env.NODE_ENV === 'production' && !showOtp) {
       const error = new Error('Email is not set up yet. Please contact us on WhatsApp.');
       error.status = 503;
       throw error;

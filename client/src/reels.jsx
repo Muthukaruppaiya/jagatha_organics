@@ -53,10 +53,13 @@ export function ReelStrip() {
   useEffect(() => {
     api.videos()
       .then((list) => {
-        if (Array.isArray(list) && list.length) setReels(list.map((item) => ({ ...item, id: item.id || item.src })));
+        if (!Array.isArray(list)) return;
+        setReels(list.length ? list.map((item) => ({ ...item, id: item.id || item.src })) : []);
       })
       .catch(() => {});
   }, []);
+
+  if (!reels.length) return null;
 
   return (
     <section className="wrap section reel-strip">

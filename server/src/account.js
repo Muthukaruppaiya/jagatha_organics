@@ -1,16 +1,25 @@
 import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import rateLimit from 'express-rate-limit';
 import { getPool } from './db.js';
 import { cleanPhone, mapAddress, readAddress } from './address.js';
 import { sendMail } from './mailer.js';
+import { paymentKeys } from './payments.js';
+import {
+  clearCustomerCookie,
+  jwtSecret,
+  readCustomerToken,
+  revealOtp,
+  setCustomerCookie,
+  signCustomerToken,
+} from './session.js';
 
 const OTP_MINUTES = 10;
 const OTP_ATTEMPTS = 5;
 const OTP_RESEND_SECONDS = 30;
 
 function otpHash(email, code) {
-  return crypto.createHmac('sha256', process.env.JWT_SECRET).update(`${email}:${code}`).digest('hex');
+  return crypto.createHmac('sha256', jwtSecret()).update(`${email}:${code}`).digest('hex');
 }
 
 function clip(value, max) {
@@ -18,16 +27,7 @@ function clip(value, max) {
 }
 
 export function customerFrom(req) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  if (!token) return null;
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    if (payload.kind !== 'customer') return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  return readCustomerToken(req);
 }
 
 function requireCustomer(req, res, next) {
@@ -37,14 +37,78 @@ function requireCustomer(req, res, next) {
   next();
 }
 
-function signCustomer(row) {
-  const customer = { id: row.id, name: row.name, email: row.email, phone: row.phone };
-  const token = jwt.sign({ kind: 'customer', ...customer }, process.env.JWT_SECRET, { expiresIn: '30d' });
-  return { token, customer };
+function signCustomer(res, row) {
+  const { token, customer } = signCustomerToken(row);
+  setCustomerCookie(res, token);
+  return { customer };
 }
 
+function mapPublicOrder(row) {
+  return {
+    orderNumber: row.order_number,
+    customerName: row.customer_name,
+    phone: row.phone,
+    email: row.email,
+    addressLine: row.address_line,
+    locality: row.locality || '',
+    landmark: row.landmark || '',
+    city: row.city,
+    state: row.state || '',
+    pincode: row.pincode,
+    altPhone: row.alt_phone || '',
+    addressType: row.address_type || '',
+    events: row.events,
+    notes: row.notes,
+    paymentMethod: row.payment_method,
+    paymentStatus: row.payment_status || '',
+    channel: row.channel || 'online',
+    courierName: row.courier_name || '',
+    trackingNumber: row.tracking_number || '',
+    trackingUrl: row.tracking_url || '',
+    status: row.status,
+    shippingPaise: row.shipping_paise || 0,
+    totalPaise: row.total_paise,
+    createdAt: row.created_at,
+    items: row.items,
+  };
+}
+
+const ORDER_SELECT = `
+  SELECT o.*,
+    COALESCE(
+      (
+        SELECT json_agg(json_build_object(
+          'productName', i.product_name,
+          'productSlug', i.product_slug,
+          'variantLabel', i.variant_label,
+          'unitPricePaise', i.unit_price_paise,
+          'quantity', i.quantity,
+          'imageUrl', i.image_url
+        ) ORDER BY i.id)
+        FROM order_items i WHERE i.order_id = o.id
+      ),
+      '[]'::json
+    ) AS items,
+    COALESCE(
+      (
+        SELECT json_agg(json_build_object('status', e.status, 'note', e.note, 'at', e.created_at) ORDER BY e.created_at, e.id)
+        FROM order_events e WHERE e.order_id = o.id
+      ),
+      '[]'::json
+    ) AS events
+  FROM orders o
+`;
+
+const otpLimit = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many codes requested. Wait a few minutes.' },
+});
+
 export function registerAccount(app) {
-  app.post('/api/account/register/start', async (req, res, next) => {
+  app.post('/api/account/register/start', otpLimit, async (req, res, next) => {
     try {
       const name = clip(req.body?.name, 80);
       const email = clip(req.body?.email, 120).toLowerCase();
@@ -78,14 +142,14 @@ export function registerAccount(app) {
         text: `Hello ${name},\n\nYour Jagatha Organics verification code is ${code}. It works for ${OTP_MINUTES} minutes.\n\nIf you did not ask for it, ignore this email.`,
         html: `<p>Hello ${name.replace(/[<>&]/g, '')},</p><p>Your Jagatha Organics verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It works for ${OTP_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
       });
-      res.json({ sent: true, email, delivered: mail.delivered });
+      res.json({ sent: true, email, delivered: mail.delivered, ...(revealOtp() ? { code } : {}) });
     } catch (error) {
       if (error.status === 503) return res.status(503).json({ error: error.message });
       next(error);
     }
   });
 
-  app.post('/api/account/register/verify', async (req, res, next) => {
+  app.post('/api/account/register/verify', otpLimit, async (req, res, next) => {
     const client = await getPool().connect();
     try {
       const email = clip(req.body?.email, 120).toLowerCase();
@@ -103,7 +167,7 @@ export function registerAccount(app) {
       }
       const expected = Buffer.from(row.code_hash);
       const given = Buffer.from(otpHash(email, code));
-      if (code.length !== 6 || !crypto.timingSafeEqual(expected, given)) {
+      if (code.length !== 6 || expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
         await client.query('UPDATE otp_codes SET attempts = attempts + 1 WHERE email = $1', [email]);
         await client.query('COMMIT');
         return res.status(400).json({ error: 'That code is not right. Check the email and try again.' });
@@ -115,10 +179,119 @@ export function registerAccount(app) {
       );
       await client.query('DELETE FROM otp_codes WHERE email = $1', [email]);
       await client.query('COMMIT');
-      res.status(201).json(signCustomer(inserted.rows[0]));
+      res.status(201).json(signCustomer(res, inserted.rows[0]));
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch { /* ignore */ }
       if (error.code === '23505') return res.status(409).json({ error: 'An account already uses that email. Sign in instead.' });
+      next(error);
+    } finally {
+      client.release();
+    }
+  });
+
+  app.post('/api/account/otp/start', otpLimit, async (req, res, next) => {
+    try {
+      const phone = cleanPhone(req.body?.phone);
+      const name = clip(req.body?.name, 80);
+      if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a 10-digit mobile number.' });
+      const key = `phone:${phone}`;
+      const recent = await getPool().query(
+        `SELECT 1 FROM otp_codes WHERE email = $1 AND sent_at > NOW() - make_interval(secs => $2)`,
+        [key, OTP_RESEND_SECONDS],
+      );
+      if (recent.rows[0]) return res.status(429).json({ error: `Please wait ${OTP_RESEND_SECONDS} seconds before asking for a new code.` });
+      const found = await getPool().query(
+        'SELECT id, name, email, phone FROM customers WHERE phone = $1 ORDER BY id DESC LIMIT 1',
+        [phone],
+      );
+      const existing = found.rows[0];
+      if (!existing && req.body?.lookup) {
+        return res.status(404).json({ error: 'No orders for that mobile number yet.' });
+      }
+      if (!existing && name.length < 2) return res.status(400).json({ error: 'Enter your name to create an account.' });
+      const code = String(crypto.randomInt(100000, 1000000));
+      await getPool().query(
+        `INSERT INTO otp_codes (email, code_hash, payload, attempts, expires_at, sent_at)
+         VALUES ($1, $2, $3, 0, NOW() + make_interval(mins => $4), NOW())
+         ON CONFLICT (email) DO UPDATE
+         SET code_hash = EXCLUDED.code_hash, payload = EXCLUDED.payload, attempts = 0,
+             expires_at = EXCLUDED.expires_at, sent_at = NOW()`,
+        [key, otpHash(key, code), { phone, name: existing?.name || name, customerId: existing?.id || null }, OTP_MINUTES],
+      );
+      res.json({
+        sent: true,
+        phone,
+        exists: Boolean(existing),
+        name: existing?.name || name,
+        ...(revealOtp() ? { code } : {}),
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/account/otp/verify', otpLimit, async (req, res, next) => {
+    const client = await getPool().connect();
+    try {
+      const phone = cleanPhone(req.body?.phone);
+      const code = String(req.body?.code || '').replace(/\D/g, '');
+      const name = clip(req.body?.name, 80);
+      const key = `phone:${phone}`;
+      await client.query('BEGIN');
+      const { rows } = await client.query('SELECT * FROM otp_codes WHERE email = $1 FOR UPDATE', [key]);
+      const row = rows[0];
+      if (!row || new Date(row.expires_at) < new Date()) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'That code has expired. Ask for a new one.' });
+      }
+      if (row.attempts >= OTP_ATTEMPTS) {
+        await client.query('ROLLBACK');
+        return res.status(429).json({ error: 'Too many tries. Ask for a new code.' });
+      }
+      const expected = Buffer.from(row.code_hash);
+      const given = Buffer.from(otpHash(key, code));
+      if (code.length !== 6 || expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
+        await client.query('UPDATE otp_codes SET attempts = attempts + 1 WHERE email = $1', [key]);
+        await client.query('COMMIT');
+        return res.status(400).json({ error: 'That code is not right. Try again.' });
+      }
+      let customerRow;
+      if (row.payload.customerId) {
+        const found = await client.query(
+          'SELECT id, name, email, phone FROM customers WHERE id = $1',
+          [row.payload.customerId],
+        );
+        customerRow = found.rows[0];
+      }
+      if (!customerRow) {
+        const accountName = name || row.payload.name || '';
+        if (accountName.length < 2) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Enter your name to create an account.' });
+        }
+        const email = `${phone}@phone.jagathaorganics.com`;
+        const inserted = await client.query(
+          `INSERT INTO customers (name, email, phone, password_hash)
+           VALUES ($1, $2, $3, $4)
+           ON CONFLICT (email) DO UPDATE SET name = EXCLUDED.name, phone = EXCLUDED.phone
+           RETURNING id, name, email, phone`,
+          [accountName, email, phone, bcrypt.hashSync(crypto.randomBytes(12).toString('hex'), 10)],
+        );
+        customerRow = inserted.rows[0];
+      }
+      const addresses = await client.query(
+        'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY used_at DESC, id DESC',
+        [customerRow.id],
+      );
+      await client.query('DELETE FROM otp_codes WHERE email = $1', [key]);
+      await client.query('COMMIT');
+      res.json({
+        ...signCustomer(res, customerRow),
+        exists: Boolean(row.payload.customerId),
+        addresses: addresses.rows.map(mapAddress),
+      });
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { /* ignore */ }
       next(error);
     } finally {
       client.release();
@@ -181,7 +354,17 @@ export function registerAccount(app) {
     }
   });
 
-  app.post('/api/account/login', async (req, res, next) => {
+  app.get('/api/account/me', requireCustomer, (req, res) => {
+    const { id, name, email, phone } = req.customer;
+    res.json({ id, name, email, phone });
+  });
+
+  app.post('/api/account/logout', (req, res) => {
+    clearCustomerCookie(res);
+    res.json({ ok: true });
+  });
+
+  app.post('/api/account/login', otpLimit, async (req, res, next) => {
     try {
       const email = clip(req.body?.email, 120).toLowerCase();
       const password = String(req.body?.password || '');
@@ -190,7 +373,7 @@ export function registerAccount(app) {
       if (!row || !bcrypt.compareSync(password, row.password_hash)) {
         return res.status(401).json({ error: 'Those sign-in details do not match.' });
       }
-      res.json(signCustomer(row));
+      res.json(signCustomer(res, row));
     } catch (error) {
       next(error);
     }
@@ -199,42 +382,54 @@ export function registerAccount(app) {
   app.get('/api/account/orders', requireCustomer, async (req, res, next) => {
     try {
       const { rows } = await getPool().query(
-        `SELECT o.order_number, o.status, o.total_paise, o.channel, o.payment_method, o.payment_status, o.created_at,
-           o.phone, o.courier_name, o.tracking_number, o.tracking_url,
-           COALESCE(
-             (
-               SELECT json_agg(json_build_object(
-                 'productName', i.product_name,
-                 'variantLabel', i.variant_label,
-                 'quantity', i.quantity,
-                 'unitPricePaise', i.unit_price_paise,
-                 'imageUrl', i.image_url
-               ) ORDER BY i.id)
-               FROM order_items i WHERE i.order_id = o.id
-             ),
-             '[]'::json
-           ) AS items
-         FROM orders o
-         WHERE o.customer_id = $1
-            OR (o.email <> '' AND lower(o.email) = $2)
-            OR ($3 <> '' AND o.phone = $3)
-         ORDER BY o.created_at DESC`,
-        [req.customer.id, req.customer.email, req.customer.phone],
+        `${ORDER_SELECT} WHERE o.customer_id = $1 ORDER BY o.created_at DESC`,
+        [req.customer.id],
       );
-      res.json(rows.map((row) => ({
-        orderNumber: row.order_number,
-        status: row.status,
-        totalPaise: row.total_paise,
-        channel: row.channel,
-        paymentMethod: row.payment_method,
-        paymentStatus: row.payment_status || '',
-        phone: row.phone,
-        createdAt: row.created_at,
-        courierName: row.courier_name || '',
-        trackingNumber: row.tracking_number || '',
-        trackingUrl: row.tracking_url || '',
-        items: row.items,
-      })));
+      res.json(rows.map(mapPublicOrder));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/account/orders/:orderNumber/payment', requireCustomer, async (req, res, next) => {
+    try {
+      const orderNumber = String(req.params.orderNumber || '').trim().toUpperCase();
+      const { rows } = await getPool().query(
+        `SELECT order_number, status, payment_status, payment_method, razorpay_order_id,
+                total_paise, customer_name, phone, email
+         FROM orders WHERE order_number = $1 AND customer_id = $2`,
+        [orderNumber, req.customer.id],
+      );
+      const order = rows[0];
+      if (!order) return res.status(404).json({ error: 'That order was not found on this account.' });
+      const awaiting = order.payment_status === 'awaiting' && order.payment_method === 'online';
+      res.json({
+        orderNumber: order.order_number,
+        status: order.status,
+        paymentStatus: order.payment_status,
+        paymentMethod: order.payment_method,
+        amountPaise: order.total_paise,
+        currency: 'INR',
+        customerName: order.customer_name,
+        phone: order.phone,
+        email: order.email,
+        keyId: awaiting ? (paymentKeys()?.keyId || '') : '',
+        razorpayOrderId: awaiting ? order.razorpay_order_id : '',
+      });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/account/orders/:orderNumber', requireCustomer, async (req, res, next) => {
+    try {
+      const orderNumber = String(req.params.orderNumber || '').trim().toUpperCase();
+      const { rows } = await getPool().query(
+        `${ORDER_SELECT} WHERE o.order_number = $1 AND o.customer_id = $2`,
+        [orderNumber, req.customer.id],
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'That order was not found on this account.' });
+      res.json(mapPublicOrder(rows[0]));
     } catch (error) {
       next(error);
     }

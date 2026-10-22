@@ -1,7 +1,7 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { useCart } from './cart.jsx';
-import { api, readCustomer } from './api.js';
+import { api, readCustomer, saveCustomer } from './api.js';
 
 function Icon({ path }) {
   return (
@@ -27,7 +27,32 @@ export function StoreLayout() {
   const [categories, setCategories] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
-  const customer = readCustomer();
+  const [customer, setCustomer] = useState(() => readCustomer());
+
+  useEffect(() => {
+    let live = true;
+    api.accountMe()
+      .then((me) => {
+        if (!live) return;
+        saveCustomer(me);
+        setCustomer(me);
+      })
+      .catch(() => {
+        if (!live) return;
+        setCustomer(readCustomer());
+      });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    setCustomer(readCustomer());
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const sync = () => setCustomer(readCustomer());
+    window.addEventListener('jagatha-session', sync);
+    return () => window.removeEventListener('jagatha-session', sync);
+  }, []);
 
   useEffect(() => {
     api.categories()

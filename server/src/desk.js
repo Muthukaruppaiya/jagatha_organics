@@ -313,7 +313,8 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
         return res.status(404).json({ error: 'Product not found.' });
       }
       const category = found.rows[0].category;
-      const dir = path.join(imageRoot, category);
+      const folder = category === 'gift-boxes' ? 'combo' : category;
+      const dir = path.join(imageRoot, folder);
       fs.mkdirSync(dir, { recursive: true });
       const ext = path.extname(req.file.filename).toLowerCase();
       const pattern = new RegExp(`^${slug.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)\\.`, 'i');
@@ -324,7 +325,7 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
       }
       const filename = `${slug}-${nextIndex}${ext}`;
       fs.renameSync(req.file.path, path.join(dir, filename));
-      const url = `/media/${category}/${filename}`;
+      const url = `/media/${folder}/${filename}`;
       const updated = await getPool().query(
         `UPDATE products SET image_urls = image_urls || $2::text[] WHERE slug = $1 RETURNING image_urls`,
         [slug, [url]],
@@ -342,6 +343,15 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
       const url = String(req.body?.url || '');
       const file = safeImageFile(url);
       if (!file) return res.status(400).json({ error: 'That image cannot be removed.' });
+      const found = await getPool().query(
+        `SELECT image_urls FROM products WHERE slug = $1`,
+        [slug],
+      );
+      if (!found.rows[0]) return res.status(404).json({ error: 'Product not found.' });
+      const images = found.rows[0].image_urls || [];
+      if (!images.includes(url)) {
+        return res.status(400).json({ error: 'That image is not on this product.' });
+      }
       const updated = await getPool().query(
         `UPDATE products
          SET image_urls = array_remove(image_urls, $2)
@@ -349,7 +359,6 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
          RETURNING image_urls`,
         [slug, url],
       );
-      if (!updated.rows[0]) return res.status(404).json({ error: 'Product not found.' });
       if (fs.existsSync(file)) fs.unlinkSync(file);
       res.json({ images: updated.rows[0].image_urls });
     } catch (error) {
@@ -370,9 +379,12 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
            COUNT(*) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'whatsapp')::int AS whatsapp_orders,
            COUNT(*) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'store')::int AS store_bills,
            COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancelled,
+           COUNT(*) FILTER (WHERE payment_status = 'paid')::int AS paid_orders,
+           COUNT(*) FILTER (WHERE payment_status = 'awaiting')::int AS awaiting_orders,
            COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'online'), 0)::int AS online_paise,
            COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'whatsapp'), 0)::int AS whatsapp_paise,
-           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'store'), 0)::int AS store_paise
+           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'store'), 0)::int AS store_paise,
+           COALESCE(SUM(shipping_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting'), 0)::int AS shipping_paise
          FROM orders
          WHERE created_at::date BETWEEN $1::date AND $2::date`,
         [from, to],
@@ -398,11 +410,31 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
         [from, to],
       );
       const sales = await pool.query(
-        `SELECT order_number, customer_name, channel, status, total_paise, created_at
+        `SELECT order_number, customer_name, phone, state, channel, status, payment_status, payment_method,
+                total_paise, shipping_paise, created_at
          FROM orders
          WHERE created_at::date BETWEEN $1::date AND $2::date
          ORDER BY created_at DESC
-         LIMIT 40`,
+         LIMIT 500`,
+        [from, to],
+      );
+      const byState = await pool.query(
+        `SELECT COALESCE(NULLIF(state, ''), 'Unknown') AS state,
+           COUNT(*) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting')::int AS orders,
+           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting'), 0)::int AS paise,
+           COALESCE(SUM(shipping_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting'), 0)::int AS shipping_paise
+         FROM orders
+         WHERE created_at::date BETWEEN $1::date AND $2::date
+         GROUP BY 1
+         ORDER BY paise DESC`,
+        [from, to],
+      );
+      const byStatus = await pool.query(
+        `SELECT status, COUNT(*)::int AS orders,
+           COALESCE(SUM(total_paise), 0)::int AS paise
+         FROM orders
+         WHERE created_at::date BETWEEN $1::date AND $2::date
+         GROUP BY status`,
         [from, to],
       );
       const low = await pool.query(
@@ -424,6 +456,20 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
         onlinePaise: row.online_paise,
         whatsappPaise: row.whatsapp_paise,
         storePaise: row.store_paise,
+        shippingPaise: row.shipping_paise,
+        paidOrders: row.paid_orders,
+        awaitingOrders: row.awaiting_orders,
+        byState: byState.rows.map((item) => ({
+          state: item.state,
+          orders: item.orders,
+          paise: item.paise,
+          shippingPaise: item.shipping_paise,
+        })),
+        byStatus: byStatus.rows.map((item) => ({
+          status: item.status,
+          orders: item.orders,
+          paise: item.paise,
+        })),
         top: top.rows.map((item) => ({
           name: item.product_name,
           quantity: item.quantity,
@@ -442,9 +488,14 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
         sales: sales.rows.map((item) => ({
           orderNumber: item.order_number,
           customerName: item.customer_name,
+          phone: item.phone,
+          state: item.state || '',
           channel: item.channel,
           status: item.status,
+          paymentStatus: item.payment_status || '',
+          paymentMethod: item.payment_method || '',
           totalPaise: item.total_paise,
+          shippingPaise: item.shipping_paise || 0,
           createdAt: item.created_at,
         })),
       });
@@ -689,22 +740,35 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
       }
       const orderId = existing.rows[0].id;
       const previous = existing.rows[0].status;
+      if (role === 'delivery' && previous === 'cancelled') {
+        await client.query('ROLLBACK');
+        return res.status(403).json({ error: 'Delivery staff cannot reopen a cancelled order.' });
+      }
       if (role === 'delivery' && status && status !== previous && !['packed', 'shipped', 'delivered'].includes(status)) {
         await client.query('ROLLBACK');
         return res.status(403).json({ error: 'Delivery staff can mark an order packed, shipped, or delivered.' });
       }
       if (status && status !== previous) {
-        if (status === 'cancelled' && previous !== 'cancelled') await restoreLines(client, orderId, req.staff.email);
+        const restockable = ['pending', 'confirmed', 'packed'];
+        if (status === 'cancelled' && previous !== 'cancelled' && restockable.includes(previous)) {
+          await restoreLines(client, orderId, req.staff.email);
+        }
         if (previous === 'cancelled' && status !== 'cancelled') {
-          const items = await client.query(
-            `SELECT variant_id, quantity FROM order_items WHERE order_id = $1 AND variant_id IS NOT NULL`,
+          const returned = await client.query(
+            `SELECT 1 FROM inventory_moves WHERE order_id = $1 AND reason = 'cancel_return' LIMIT 1`,
             [orderId],
           );
-          await reserveLines(
-            client,
-            items.rows.map((row) => ({ variantId: row.variant_id, quantity: row.quantity })),
-            { orderId, reason: 'sale', staffEmail: req.staff.email },
-          );
+          if (returned.rows[0]) {
+            const items = await client.query(
+              `SELECT variant_id, quantity FROM order_items WHERE order_id = $1 AND variant_id IS NOT NULL`,
+              [orderId],
+            );
+            await reserveLines(
+              client,
+              items.rows.map((row) => ({ variantId: row.variant_id, quantity: row.quantity })),
+              { orderId, reason: 'sale', staffEmail: req.staff.email },
+            );
+          }
         }
       }
 

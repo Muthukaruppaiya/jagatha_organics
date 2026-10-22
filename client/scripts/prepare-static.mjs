@@ -58,6 +58,7 @@ const catalog = {
       name: product.name,
       description: product.description,
       featured: product.featured,
+      offline: true,
       images: images.get(product.slug) || ['/placeholder-product.svg'],
       category: { slug: product.category, name: category?.name || product.category },
       variants,

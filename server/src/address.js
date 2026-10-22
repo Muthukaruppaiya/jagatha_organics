@@ -8,7 +8,11 @@ export const STATES = [
 ];
 
 export function cleanPhone(value) {
-  return String(value || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+  let digits = String(value || '').replace(/\D/g, '');
+  if (digits.startsWith('91') && digits.length >= 12) digits = digits.slice(-10);
+  else if (digits.startsWith('0') && digits.length === 11) digits = digits.slice(1);
+  else if (digits.length > 10) digits = digits.slice(-10);
+  return digits;
 }
 
 function text(value, max) {

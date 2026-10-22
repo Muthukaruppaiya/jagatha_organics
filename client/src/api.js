@@ -1,5 +1,6 @@
-async function request(url, options) {
-  const response = await fetch(url, options);
+async function request(url, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  const response = await fetch(url, { ...options, headers, credentials: 'include' });
   const text = await response.text();
   let data;
   try {
@@ -12,13 +13,11 @@ async function request(url, options) {
 }
 
 function authHeaders() {
-  const token = sessionStorage.getItem('jagatha-admin');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return { 'X-Requested-With': 'JagathaDesk' };
 }
 
 function customerHeaders() {
-  const token = sessionStorage.getItem('jagatha-customer-token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
+  return { 'X-Requested-With': 'JagathaShop' };
 }
 
 let catalogPromise;
@@ -45,6 +44,7 @@ async function orCatalog(load, pick) {
 }
 
 export const api = {
+  health: () => request('/api/health').catch(() => ({ ok: false, payments: 'off' })),
   categories: () => orCatalog(async () => {
     const data = await request('/api/categories');
     if (!Array.isArray(data)) throw new Error('Request failed');
@@ -77,6 +77,13 @@ export const api = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }),
+  confirmDemoPay: (orderNumber) => request(`/api/orders/${orderNumber}/demo-pay`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}',
+  }),
+  myOrder: (orderNumber) => request(`/api/account/orders/${encodeURIComponent(orderNumber)}`, { headers: customerHeaders() }),
+  paymentSession: (orderNumber) => request(`/api/account/orders/${encodeURIComponent(orderNumber)}/payment`, { headers: customerHeaders() }),
   deskProducts: () => request('/api/admin/products', { headers: authHeaders() }),
   saveProduct: (slug, body) => request(slug ? `/api/admin/products/${slug}` : '/api/admin/products', {
     method: slug ? 'PATCH' : 'POST',
@@ -130,6 +137,20 @@ export const api = {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, code }),
+  }),
+  accountMe: () => request('/api/account/me', { headers: customerHeaders() }),
+  accountLogout: () => request('/api/account/logout', { method: 'POST', headers: customerHeaders() }),
+  staffMe: () => request('/api/admin/me', { headers: authHeaders() }),
+  staffLogout: () => request('/api/admin/logout', { method: 'POST', headers: authHeaders() }),
+  startCheckoutOtp: (body) => request('/api/account/otp/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }),
+  verifyCheckoutOtp: (body) => request('/api/account/otp/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
   }),
   addresses: () => request('/api/account/addresses', { headers: customerHeaders() }),
   saveAddress: (id, body) => request(id ? `/api/account/addresses/${id}` : '/api/account/addresses', {
@@ -209,6 +230,13 @@ export const api = {
     if (to) query.set('to', to);
     return request(`/api/admin/reports?${query}`, { headers: authHeaders() });
   },
+  shipping: () => request('/api/shipping').catch(() => null),
+  settings: () => request('/api/admin/settings', { headers: authHeaders() }),
+  saveSettings: (body) => request('/api/admin/settings', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  }),
   // createBill: (body) => request('/api/admin/pos', {
   //   method: 'POST',
   //   headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -248,6 +276,7 @@ export const STATUS_LABEL = {
 
 export const PAYMENT_LABEL = {
   online: 'Online payment',
+  demo: 'Test payment',
   cod: 'Cash on delivery',
   whatsapp: 'WhatsApp · cash on delivery',
   cash: 'Cash at the counter',
@@ -261,7 +290,10 @@ export const PAYMENT_STATUS_LABEL = {
 };
 
 export function paymentLabel(order) {
-  if (order.paymentMethod === 'online') return `${PAYMENT_LABEL.online} · ${PAYMENT_STATUS_LABEL[order.paymentStatus] || 'Awaiting payment'}`;
+  if (order.paymentMethod === 'online' || order.paymentMethod === 'demo') {
+    const kind = PAYMENT_LABEL[order.paymentMethod] || PAYMENT_LABEL.online;
+    return `${kind} · ${PAYMENT_STATUS_LABEL[order.paymentStatus] || 'Awaiting payment'}`;
+  }
   return PAYMENT_LABEL[order.paymentMethod] || order.paymentMethod;
 }
 
@@ -363,12 +395,39 @@ export function readCustomer() {
   }
 }
 
+function bumpSession() {
+  window.dispatchEvent(new Event('jagatha-session'));
+}
+
 export function saveCustomer(result) {
-  sessionStorage.setItem('jagatha-customer-token', result.token);
-  sessionStorage.setItem('jagatha-customer', JSON.stringify(result.customer));
+  const customer = result?.customer || result;
+  if (customer?.id) sessionStorage.setItem('jagatha-customer', JSON.stringify(customer));
+  bumpSession();
+}
+
+export function forgetCustomer() {
+  sessionStorage.removeItem('jagatha-customer-token');
+  sessionStorage.removeItem('jagatha-customer');
+  bumpSession();
 }
 
 export function clearCustomer() {
-  sessionStorage.removeItem('jagatha-customer-token');
-  sessionStorage.removeItem('jagatha-customer');
+  forgetCustomer();
+  api.accountLogout().catch(() => {});
+}
+
+export function saveStaff(staff) {
+  if (staff?.role) sessionStorage.setItem('jagatha-staff', JSON.stringify(staff));
+  bumpSession();
+}
+
+export function forgetStaff() {
+  sessionStorage.removeItem('jagatha-admin');
+  sessionStorage.removeItem('jagatha-staff');
+  bumpSession();
+}
+
+export function clearStaff() {
+  forgetStaff();
+  api.staffLogout().catch(() => {});
 }

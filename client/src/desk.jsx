@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { AdminShell } from './admin.jsx';
-import { api, inr, readStaff, ROLE_LABEL, sourceLabel, STATUS_LABEL, when } from './api.js';
+import { api, inr, PAYMENT_STATUS_LABEL, readStaff, ROLE_LABEL, sourceLabel, STATUS_LABEL, when } from './api.js';
+import { downloadCsv } from './csv.js';
 
 function useGuard(roles) {
-  const person = readStaff();
+  const [person, setPerson] = useState(() => readStaff());
+  useEffect(() => {
+    const sync = () => setPerson(readStaff());
+    window.addEventListener('jagatha-session', sync);
+    return () => window.removeEventListener('jagatha-session', sync);
+  }, []);
   if (person && !roles.includes(person.role)) return <Navigate to="/admin" replace />;
   return null;
 }
@@ -221,13 +227,46 @@ export function AdminReports() {
   }, [from, to]);
 
   if (blocked) return blocked;
+  const totalPaise = (report?.onlinePaise || 0) + (report?.whatsappPaise || 0) + (report?.storePaise || 0);
+  const range = `${report?.from || from || ''} to ${report?.to || to || ''}`;
+
+  function exportSales() {
+    if (!report?.sales?.length) return;
+    downloadCsv(`jagatha-sales-${report.from}-${report.to}.csv`, [
+      ['Order', 'Customer', 'Phone', 'State', 'Channel', 'Status', 'Payment', 'Delivery', 'Total', 'Placed'],
+      ...report.sales.map((order) => [
+        order.orderNumber,
+        order.customerName,
+        order.phone || '',
+        order.state || '',
+        sourceLabel(order.channel),
+        STATUS_LABEL[order.status] || order.status,
+        order.paymentStatus ? PAYMENT_STATUS_LABEL[order.paymentStatus] : '',
+        (order.shippingPaise || 0) / 100,
+        (order.totalPaise || 0) / 100,
+        when(order.createdAt),
+      ]),
+    ]);
+  }
+
+  function exportRevenue() {
+    if (!report?.daily?.length) return;
+    downloadCsv(`jagatha-revenue-${report.from}-${report.to}.csv`, [
+      ['Date', 'Orders', 'Revenue'],
+      ...report.daily.map((day) => [day.date, day.orders, (day.paise || 0) / 100]),
+    ]);
+  }
+
   return (
-    <AdminShell eyebrow="Numbers" title="Reports" lead="Website checkout, WhatsApp orders, and counter bills, side by side.">
-      <div className="date-range">
+    <AdminShell eyebrow="Numbers" title="Reports" lead="Sales, delivery charges, and stock for the dates you pick. Export CSV or print the page.">
+      <div className="date-range no-print">
         <label>From<input type="date" value={from || report?.from || ''} onChange={(event) => setFrom(event.target.value)} /></label>
         <label>To<input type="date" value={to || report?.to || ''} onChange={(event) => setTo(event.target.value)} /></label>
+        <button type="button" className="btn tiny" onClick={exportSales} disabled={!report?.sales?.length}>Export sales CSV</button>
+        <button type="button" className="btn tiny ghost" onClick={exportRevenue} disabled={!report?.daily?.length}>Export revenue CSV</button>
+        <button type="button" className="btn tiny ghost" onClick={() => window.print()}>Print report</button>
       </div>
-      <div className="desk-tabs">
+      <div className="desk-tabs no-print">
         <button type="button" className={tab === 'overview' ? 'on' : ''} onClick={() => setTab('overview')}>Overview</button>
         <button type="button" className={tab === 'sales' ? 'on' : ''} onClick={() => setTab('sales')}>Sales report</button>
         <button type="button" className={tab === 'revenue' ? 'on' : ''} onClick={() => setTab('revenue')}>Revenue report</button>
@@ -235,11 +274,12 @@ export function AdminReports() {
       {error && <p className="status error">{error}</p>}
       {report && tab === 'overview' && (
         <>
+          <p className="print-only">Jagatha Organics report · {range}</p>
           <div className="desk-stats">
             <article><span>Website</span><strong>{report.onlineOrders}</strong><small>{inr(report.onlinePaise)}</small></article>
             <article><span>WhatsApp</span><strong>{report.whatsappOrders || 0}</strong><small>{inr(report.whatsappPaise || 0)}</small></article>
-            <article><span>Store bills</span><strong>{report.storeBills}</strong><small>{inr(report.storePaise)}</small></article>
-            <article><span>Taken together</span><strong>{inr(report.onlinePaise + (report.whatsappPaise || 0) + report.storePaise)}</strong><small>{report.cancelled} cancelled</small></article>
+            <article><span>Taken together</span><strong>{inr(totalPaise)}</strong><small>{report.cancelled} cancelled</small></article>
+            <article><span>Delivery collected</span><strong>{inr(report.shippingPaise || 0)}</strong><small>{report.paidOrders || 0} paid</small></article>
           </div>
           <div className="split report-split">
             <div className="glass summary">
@@ -247,6 +287,21 @@ export function AdminReports() {
               {report.top.length === 0 && <p className="muted">No sales in this range.</p>}
               {report.top.map((item) => (
                 <p key={item.name}><span>{item.name} × {item.quantity}</span><b>{inr(item.paise)}</b></p>
+              ))}
+            </div>
+            <div className="glass summary">
+              <h2>By state</h2>
+              {(report.byState || []).length === 0 && <p className="muted">No state totals yet.</p>}
+              {(report.byState || []).slice(0, 8).map((item) => (
+                <p key={item.state}><span>{item.state} · {item.orders}</span><b>{inr(item.paise)}</b></p>
+              ))}
+            </div>
+          </div>
+          <div className="split report-split">
+            <div className="glass summary">
+              <h2>Order status</h2>
+              {(report.byStatus || []).map((item) => (
+                <p key={item.status}><span>{STATUS_LABEL[item.status] || item.status} · {item.orders}</span><b>{inr(item.paise)}</b></p>
               ))}
             </div>
             <div className="glass summary">
@@ -267,7 +322,7 @@ export function AdminReports() {
               <span className="avatar">{order.customerName.slice(0, 1)}</span>
               <div>
                 <b>{order.orderNumber} · {order.customerName}</b>
-                <small>{when(order.createdAt)}</small>
+                <small>{when(order.createdAt)} · {order.state || 'No state'} · {order.phone || 'No phone'}</small>
               </div>
               <span className={`chip ${order.channel}`}>{sourceLabel(order.channel)}</span>
               <span className={`tag ${order.status}`}>{STATUS_LABEL[order.status]}</span>

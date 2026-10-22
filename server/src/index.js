@@ -4,14 +4,25 @@ import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
+import cookieParser from 'cookie-parser';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
 import { getPool, startDatabase, stopDatabase } from './db.js';
 import { seedDatabase } from './seed.js';
 import { addEvent, registerDesk, reserveLines, restoreLines } from './desk.js';
 import { customerFrom, registerAccount } from './account.js';
-import { createRazorpayOrder, paymentKeys, validSignature } from './payments.js';
+import { createRazorpayOrder, demoEnabled, paymentKeys, paymentMode, validSignature, validWebhook } from './payments.js';
 import { readAddress } from './address.js';
+import { cartGrams, loadShippingRules, shippingPaise } from './shipping.js';
+import { registerSettings } from './settings.js';
+import {
+  clearStaffCookie,
+  jwtSecret,
+  readStaffToken,
+  setStaffCookie,
+  signStaffToken,
+} from './session.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const STATUSES = ['pending', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled'];
@@ -58,16 +69,10 @@ function mapProduct(row) {
 }
 
 function requireStaff(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : '';
-  try {
-    const payload = jwt.verify(token, process.env.JWT_SECRET);
-    if (!payload.role) return res.status(401).json({ error: 'Please sign in again.' });
-    req.staff = payload;
-    next();
-  } catch {
-    res.status(401).json({ error: 'Please sign in again.' });
-  }
+  const payload = readStaffToken(req);
+  if (!payload) return res.status(401).json({ error: 'Please sign in again.' });
+  req.staff = payload;
+  next();
 }
 
 function allow(...roles) {
@@ -142,6 +147,7 @@ async function orderWithItems(orderNumber) {
     trackingNumber: row.tracking_number || '',
     trackingUrl: row.tracking_url || '',
     status: row.status,
+    shippingPaise: row.shipping_paise || 0,
     totalPaise: row.total_paise,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -149,16 +155,83 @@ async function orderWithItems(orderNumber) {
   };
 }
 
+async function markPaymentCaptured(client, order, paymentId, extraNote = '') {
+  if (order.payment_status === 'paid') return;
+  let note = extraNote;
+  if (order.status === 'cancelled') {
+    const { rows: lines } = await client.query(
+      'SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = $1 AND variant_id IS NOT NULL',
+      [order.id],
+    );
+    await client.query('SAVEPOINT restock');
+    try {
+      await reserveLines(client, lines, { orderId: order.id, reason: 'sale', staffEmail: '' });
+    } catch {
+      await client.query('ROLLBACK TO SAVEPOINT restock');
+      note = 'Paid after the payment window closed and some packs are now out of stock. Check stock before packing.';
+    }
+  }
+  await client.query(
+    `UPDATE orders
+     SET payment_status = 'paid', razorpay_payment_id = $2,
+         status = CASE WHEN status IN ('pending', 'cancelled') THEN 'confirmed' ELSE status END,
+         admin_note = CASE WHEN $3 = '' THEN admin_note ELSE TRIM(admin_note || ' ' || $3) END,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [order.id, paymentId, note],
+  );
+  await addEvent(client, order.id, 'confirmed', 'Payment received');
+}
+
+function authLimit() {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: { error: 'Too many tries. Wait a few minutes and try again.' },
+  });
+}
+
 function createApp() {
+  jwtSecret();
   const app = express();
-  app.use(cors());
-  app.use(express.json({ limit: '1mb' }));
+  app.disable('x-powered-by');
+  app.set('trust proxy', 1);
+  app.use(helmet({
+    contentSecurityPolicy: false,
+    crossOriginEmbedderPolicy: false,
+    hsts: process.env.NODE_ENV === 'production' ? undefined : false,
+  }));
+  app.use(cors({
+    origin: process.env.PUBLIC_ORIGIN || true,
+    credentials: true,
+  }));
+  app.use(cookieParser());
+  app.use('/api', rateLimit({
+    windowMs: 60 * 1000,
+    max: 240,
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => req.path === '/health',
+    message: { error: 'Too many requests. Please wait a moment.' },
+  }));
+  app.use((req, res, next) => {
+    const pathName = req.originalUrl.split('?')[0];
+    if (pathName === '/api/payments/razorpay-webhook') {
+      return express.raw({ type: 'application/json' })(req, res, next);
+    }
+    if (!/json/i.test(req.headers['content-type'] || '')) return next();
+    return express.json({ limit: '200kb' })(req, res, next);
+  });
   app.use('/media', express.static(path.resolve(__dirname, '../../reference/product-images')));
   app.use('/videos', express.static(path.resolve(__dirname, '../../reference/videos')));
   app.use('/banner-images', express.static(path.resolve(__dirname, '../../reference/banners')));
+  const reelsDir = path.resolve(__dirname, '../../client/public/reels');
+  if (existsSync(reelsDir)) app.use('/reels', express.static(reelsDir));
 
   app.get('/api/health', (_req, res) => {
-    res.json({ ok: true });
+    res.json({ ok: true, payments: paymentMode() });
   });
 
   app.get('/api/categories', async (_req, res, next) => {
@@ -214,7 +287,11 @@ function createApp() {
     }
   });
 
-  app.post('/api/orders', async (req, res, next) => {
+  app.post('/api/orders', authLimit(), async (req, res, next) => {
+    const customer = customerFrom(req);
+    if (!customer) {
+      return res.status(401).json({ error: 'Sign in with your mobile number to place an order.' });
+    }
     const body = req.body || {};
     let address;
     try {
@@ -229,7 +306,8 @@ function createApp() {
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email, or leave it blank.' });
     if (items.length === 0) return res.status(400).json({ error: 'Your cart is empty.' });
     const keys = paymentKeys();
-    if (!keys) {
+    const demo = demoEnabled();
+    if (!keys && !demo) {
       return res.status(503).json({ error: 'Online payment is not switched on yet. Please message us on WhatsApp at +91 98841 26032 to order.' });
     }
 
@@ -245,7 +323,7 @@ function createApp() {
           return res.status(400).json({ error: 'Each pack quantity must be between 1 and 20.' });
         }
         const found = await client.query(
-          `SELECT v.id, v.label, v.price_paise, p.name, p.slug, p.image_urls
+          `SELECT v.id, v.label, v.price_paise, v.weight_grams, p.name, p.slug, p.image_urls
            FROM variants v
            JOIN products p ON p.id = v.product_id
            WHERE v.id = $1 AND p.active`,
@@ -262,25 +340,28 @@ function createApp() {
           productSlug: row.slug,
           variantLabel: row.label,
           unitPricePaise: row.price_paise,
+          grams: row.weight_grams,
           quantity,
           imageUrl: row.image_urls?.[0] || '',
         });
       }
 
-      const customer = customerFrom(req);
-      const totalPaise = lines.reduce((sum, line) => sum + line.unitPricePaise * line.quantity, 0);
+      const goodsPaise = lines.reduce((sum, line) => sum + line.unitPricePaise * line.quantity, 0);
+      const shipRules = await loadShippingRules(getPool());
+      const shipPaise = shippingPaise({ pincode: address.pincode, state: address.state, grams: cartGrams(lines) }, shipRules);
+      const totalPaise = goodsPaise + shipPaise;
       const tempNumber = `TMP${Date.now()}${Math.floor(Math.random() * 10000)}`;
       const inserted = await client.query(
         `INSERT INTO orders (
            order_number, customer_name, phone, email, address_line, city, pincode, notes,
            locality, state, landmark, alt_phone, address_type,
-           payment_method, payment_status, status, total_paise, channel, customer_id
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'online', 'awaiting', 'pending', $14, 'online', $15)
+           payment_method, payment_status, status, total_paise, shipping_paise, channel, customer_id
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'awaiting', 'pending', $15, $16, 'online', $17)
          RETURNING id`,
         [
           tempNumber, address.name, address.phone, email, address.addressLine, address.city, address.pincode, notes,
           address.locality, address.state, address.landmark, address.altPhone, address.addressType,
-          totalPaise, customer?.id || null,
+          demo ? 'demo' : 'online', totalPaise, shipPaise, customer?.id || null,
         ],
       );
       const id = inserted.rows[0].id;
@@ -298,17 +379,25 @@ function createApp() {
         );
       }
       await reserveLines(client, lines, { orderId: id, reason: 'sale', staffEmail: '' });
-      const razorpayOrder = await createRazorpayOrder({ amountPaise: totalPaise, receipt: orderNumber });
-      await client.query('UPDATE orders SET razorpay_order_id = $1 WHERE id = $2', [razorpayOrder.id, id]);
-      await client.query('COMMIT');
-      res.status(201).json({
-        order: await orderWithItems(orderNumber),
-        payment: {
+      let payment = { demo: true, amountPaise: totalPaise, currency: 'INR' };
+      if (!demo) {
+        const razorpayOrder = await createRazorpayOrder({
+          amountPaise: totalPaise,
+          receipt: orderNumber,
+          notes: { order: orderNumber, phone: address.phone, pincode: address.pincode },
+        });
+        await client.query('UPDATE orders SET razorpay_order_id = $1 WHERE id = $2', [razorpayOrder.id, id]);
+        payment = {
           keyId: keys.keyId,
           razorpayOrderId: razorpayOrder.id,
           amountPaise: totalPaise,
           currency: 'INR',
-        },
+        };
+      }
+      await client.query('COMMIT');
+      res.status(201).json({
+        order: await orderWithItems(orderNumber),
+        payment,
       });
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch { /* ignore */ }
@@ -316,6 +405,72 @@ function createApp() {
       next(error);
     } finally {
       client.release();
+    }
+  });
+
+  app.post('/api/orders/:orderNumber/demo-pay', async (req, res, next) => {
+    if (!demoEnabled()) {
+      return res.status(403).json({ error: 'Test payment is only available on this local shop.' });
+    }
+    const orderNumber = String(req.params.orderNumber || '').toUpperCase();
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      const found = await client.query(
+        `SELECT id, status, payment_status, razorpay_order_id
+         FROM orders WHERE order_number = $1 AND payment_method = 'demo' FOR UPDATE`,
+        [orderNumber],
+      );
+      const order = found.rows[0];
+      if (!order) {
+        await client.query('ROLLBACK');
+        return res.status(404).json({ error: 'No test order is waiting for that number.' });
+      }
+      await markPaymentCaptured(client, order, 'demo');
+      await client.query('COMMIT');
+      const { adminNote, ...paid } = await orderWithItems(orderNumber);
+      res.json(paid);
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+      next(error);
+    } finally {
+      client.release();
+    }
+  });
+
+  app.post('/api/payments/razorpay-webhook', async (req, res, next) => {
+    try {
+      const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body || {}));
+      if (!validWebhook(raw, req.headers['x-razorpay-signature'])) {
+        return res.status(400).json({ error: 'Invalid webhook signature.' });
+      }
+      const event = JSON.parse(raw.toString('utf8'));
+      if (event.event !== 'payment.captured' && event.event !== 'order.paid') {
+        return res.json({ ok: true });
+      }
+      const payment = event.payload?.payment?.entity || {};
+      const razorpayOrderId = payment.order_id || event.payload?.order?.entity?.id || '';
+      const paymentId = payment.id || '';
+      if (!razorpayOrderId || !paymentId) return res.json({ ok: true });
+      const client = await getPool().connect();
+      try {
+        await client.query('BEGIN');
+        const found = await client.query(
+          'SELECT id, status, payment_status, razorpay_order_id FROM orders WHERE razorpay_order_id = $1 FOR UPDATE',
+          [razorpayOrderId],
+        );
+        const order = found.rows[0];
+        if (order) await markPaymentCaptured(client, order, paymentId);
+        await client.query('COMMIT');
+      } catch (error) {
+        try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+        throw error;
+      } finally {
+        client.release();
+      }
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
     }
   });
 
@@ -340,32 +495,7 @@ function createApp() {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'We could not confirm this payment. If money was taken, message us on WhatsApp with the order number.' });
       }
-      if (order.payment_status !== 'paid') {
-        let note = '';
-        if (order.status === 'cancelled') {
-          const { rows: lines } = await client.query(
-            'SELECT variant_id AS "variantId", quantity FROM order_items WHERE order_id = $1 AND variant_id IS NOT NULL',
-            [order.id],
-          );
-          await client.query('SAVEPOINT restock');
-          try {
-            await reserveLines(client, lines, { orderId: order.id, reason: 'sale', staffEmail: '' });
-          } catch {
-            await client.query('ROLLBACK TO SAVEPOINT restock');
-            note = 'Paid after the payment window closed and some packs are now out of stock. Check stock before packing.';
-          }
-        }
-        await client.query(
-          `UPDATE orders
-           SET payment_status = 'paid', razorpay_payment_id = $2,
-               status = CASE WHEN status IN ('pending', 'cancelled') THEN 'confirmed' ELSE status END,
-               admin_note = CASE WHEN $3 = '' THEN admin_note ELSE TRIM(admin_note || ' ' || $3) END,
-               updated_at = NOW()
-           WHERE id = $1`,
-          [order.id, paymentId, note],
-        );
-        await addEvent(client, order.id, 'confirmed', 'Payment received');
-      }
+      await markPaymentCaptured(client, order, paymentId);
       await client.query('COMMIT');
       const { adminNote, ...paid } = await orderWithItems(orderNumber);
       res.json(paid);
@@ -393,7 +523,7 @@ function createApp() {
     }
   });
 
-  app.post('/api/admin/login', async (req, res, next) => {
+  app.post('/api/admin/login', authLimit(), async (req, res, next) => {
     try {
       const email = String(req.body?.email || '').trim().toLowerCase();
       const password = String(req.body?.password || '');
@@ -402,12 +532,22 @@ function createApp() {
       if (!admin || !bcrypt.compareSync(password, admin.password_hash)) {
         return res.status(401).json({ error: 'Those sign-in details do not match.' });
       }
-      const staff = { email: admin.email, name: admin.name, role: admin.role || 'admin' };
-      const token = jwt.sign({ id: admin.id, email: admin.email, name: admin.name, role: staff.role }, process.env.JWT_SECRET, { expiresIn: '7d' });
-      res.json({ token, staff });
+      const { token, staff } = signStaffToken(admin);
+      setStaffCookie(res, token);
+      res.json({ staff });
     } catch (error) {
       next(error);
     }
+  });
+
+  app.get('/api/admin/me', requireStaff, (req, res) => {
+    const { id, email, name, role } = req.staff;
+    res.json({ id, email, name, role });
+  });
+
+  app.post('/api/admin/logout', (_req, res) => {
+    clearStaffCookie(res);
+    res.json({ ok: true });
   });
 
   app.get('/api/admin/summary', requireStaff, async (_req, res, next) => {
@@ -533,18 +673,20 @@ function createApp() {
 
   registerAccount(app);
   registerDesk(app, { requireStaff, allow, orderWithItems, cleanPhone, STATUSES });
+  registerSettings(app, { requireStaff, allow });
 
   const dist = path.resolve(__dirname, '../../client/dist');
   if (existsSync(dist)) {
     app.use(express.static(dist));
     app.get('*', (req, res, next) => {
-      if (/^\/(api|media|videos|banner-images)(\/|$)/.test(req.path)) return next();
+      if (/^\/(api|media|videos|banner-images|reels)(\/|$)/.test(req.path)) return next();
       res.sendFile(path.join(dist, 'index.html'));
     });
   }
 
   app.use((error, _req, res, _next) => {
     if (error.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'That file is too large. Photos are 8 MB and videos are 40 MB.' });
+    if (error.type === 'entity.too.large') return res.status(413).json({ error: 'That request is too large.' });
     if (error.status && error.status < 500) return res.status(error.status).json({ error: error.message });
     console.error(error);
     res.status(500).json({ error: 'Something went wrong. Please try again.' });
@@ -594,7 +736,11 @@ startDatabase()
   .then(() => {
     const server = app.listen(port, () => {
       console.log(`Jagatha API ready at http://127.0.0.1:${port}`);
-      if (!paymentKeys()) console.log('Online payment is off: add RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to server/.env.');
+      const mode = paymentMode();
+      if (mode === 'live') console.log('Razorpay live payments are on.');
+      else if (mode === 'test') console.log('Razorpay test keys are loaded. Use rzp_live_ keys for real charges.');
+      else if (mode === 'demo') console.log('Test payments are on: checkout can confirm an order without Razorpay.');
+      else console.log('Online payment is off: add live RAZORPAY_KEY_ID and RAZORPAY_KEY_SECRET to server/.env.');
     });
     const sweep = setInterval(() => expireUnpaidOrders().catch((error) => console.error(error)), 5 * 60 * 1000);
     expireUnpaidOrders().catch((error) => console.error(error));

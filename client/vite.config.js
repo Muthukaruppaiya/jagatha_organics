@@ -6,10 +6,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://127.0.0.1:4000',
-      '/media': 'http://127.0.0.1:4000',
-      '/videos': 'http://127.0.0.1:4000',
-      '/banner-images': 'http://127.0.0.1:4000',
+      '/api': { target: 'http://127.0.0.1:4000', changeOrigin: true },
+      '/media': { target: 'http://127.0.0.1:4000', changeOrigin: true },
+      '/videos': { target: 'http://127.0.0.1:4000', changeOrigin: true },
+      '/banner-images': { target: 'http://127.0.0.1:4000', changeOrigin: true },
     },
   },
 });

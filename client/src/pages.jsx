@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { api, inr, readCustomer } from './api.js';
+import { api, inr, lookupPincode, readCustomer } from './api.js';
 import { useCart } from './cart.jsx';
 import { HeroBanner } from './banner.jsx';
 import { PriceDetails } from './checkout.jsx';
@@ -201,6 +201,7 @@ export function Product() {
   const [variantId, setVariantId] = useState(null);
   const [quantity, setQuantity] = useState(1);
   const [added, setAdded] = useState(false);
+  const [cartNote, setCartNote] = useState('');
   const [reviews, setReviews] = useState({ average: 0, count: 0, reviews: [] });
   const [reviewBody, setReviewBody] = useState('');
   const [reviewRating, setReviewRating] = useState(5);
@@ -213,6 +214,7 @@ export function Product() {
     setProduct(null);
     setError('');
     setAdded(false);
+    setCartNote('');
     setRelated([]);
     api.products()
       .then((list) => {
@@ -244,36 +246,48 @@ export function Product() {
   const left = Number.isInteger(variant?.stockQty) ? variant.stockQty : null;
   const out = left === 0;
 
+  function liveVariant() {
+    return Number.isInteger(Number(variant.id)) && String(Number(variant.id)) === String(variant.id);
+  }
+
+  function cartLine() {
+    return {
+      variantId: variant.id,
+      quantity,
+      name: product.name,
+      label: variant.label,
+      pricePaise: variant.pricePaise,
+      comparePaise: variant.comparePaise,
+      image: product.images[0],
+      slug: product.slug,
+      stockQty: left,
+      grams: variant.weightGrams,
+    };
+  }
+
   function add() {
+    if (!liveVariant()) {
+      setAdded(false);
+      setCartNote('The shop server is offline, so packs cannot be added to the cart right now.');
+      return;
+    }
     if (!cart.items.some((item) => item.variantId === variant.id)) {
-      cart.add({
-        variantId: variant.id,
-        quantity,
-        name: product.name,
-        label: variant.label,
-        pricePaise: variant.pricePaise,
-        comparePaise: variant.comparePaise,
-        image: product.images[0],
-        slug: product.slug,
-      });
+      cart.add(cartLine());
     } else {
       cart.setQty(variant.id, cart.items.find((item) => item.variantId === variant.id).quantity + quantity);
     }
+    setCartNote('');
     setAdded(true);
   }
 
   function buyNow() {
+    if (!liveVariant()) {
+      setAdded(false);
+      setCartNote('The shop server is offline, so packs cannot be added to the cart right now.');
+      return;
+    }
     if (!cart.items.some((item) => item.variantId === variant.id)) {
-      cart.add({
-        variantId: variant.id,
-        quantity,
-        name: product.name,
-        label: variant.label,
-        pricePaise: variant.pricePaise,
-        comparePaise: variant.comparePaise,
-        image: product.images[0],
-        slug: product.slug,
-      });
+      cart.add(cartLine());
     }
     navigate('/checkout');
   }
@@ -336,6 +350,7 @@ export function Product() {
           <button className="btn buy-now" type="button" onClick={buyNow} disabled={out || (left != null && quantity > left)}>Buy now</button>
         </div>
         {!out && left != null && left <= 8 && <p className="muted">Only {left} left</p>}
+        {cartNote && <p className="status error">{cartNote}</p>}
         {added && <p className="note">Added. <Link to="/cart">View cart</Link></p>}
       </div>
     </div>
@@ -374,6 +389,16 @@ export function Product() {
 
 export function Cart() {
   const cart = useCart();
+  const [pincode, setPincode] = useState('');
+  const [state, setState] = useState('');
+  function onPincode(value) {
+    setPincode(value);
+    if (value.length === 6) {
+      lookupPincode(value).then((found) => setState(found?.state || ''));
+    } else {
+      setState('');
+    }
+  }
   if (cart.items.length === 0) {
     return (
       <div className="wrap page narrow">
@@ -407,7 +432,7 @@ export function Cart() {
             </li>
           ))}
         </ul>
-        <PriceDetails items={cart.items}>
+        <PriceDetails items={cart.items} pincode={pincode} state={state} onPincode={onPincode}>
           <Link className="btn step-cta wide" to="/checkout">Place order</Link>
         </PriceDetails>
       </div>
