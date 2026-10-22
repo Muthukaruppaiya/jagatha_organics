@@ -128,6 +128,39 @@ export async function startDatabase() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_url TEXT NOT NULL DEFAULT '';
     ALTER TABLE variants ADD COLUMN IF NOT EXISTS stock_qty INT NOT NULL DEFAULT 24;
     ALTER TABLE order_items ADD COLUMN IF NOT EXISTS variant_id INT;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS sort_order INT NOT NULL DEFAULT 0;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS razorpay_order_id TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS razorpay_payment_id TEXT NOT NULL DEFAULT '';
+
+    CREATE TABLE IF NOT EXISTS settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
+
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS locality TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS state TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS landmark TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS alt_phone TEXT NOT NULL DEFAULT '';
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS address_type TEXT NOT NULL DEFAULT '';
+
+    CREATE TABLE IF NOT EXISTS order_events (
+      id SERIAL PRIMARY KEY,
+      order_id INT NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      status TEXT NOT NULL,
+      note TEXT NOT NULL DEFAULT '',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE TABLE IF NOT EXISTS otp_codes (
+      email TEXT PRIMARY KEY,
+      code_hash TEXT NOT NULL,
+      payload JSONB NOT NULL,
+      attempts INT NOT NULL DEFAULT 0,
+      expires_at TIMESTAMPTZ NOT NULL,
+      sent_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
 
     CREATE TABLE IF NOT EXISTS customers (
       id SERIAL PRIMARY KEY,
@@ -138,6 +171,23 @@ export async function startDatabase() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_id INT REFERENCES customers(id);
+
+    CREATE TABLE IF NOT EXISTS customer_addresses (
+      id SERIAL PRIMARY KEY,
+      customer_id INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      phone TEXT NOT NULL,
+      pincode TEXT NOT NULL,
+      locality TEXT NOT NULL,
+      address_line TEXT NOT NULL,
+      city TEXT NOT NULL,
+      state TEXT NOT NULL,
+      landmark TEXT NOT NULL DEFAULT '',
+      alt_phone TEXT NOT NULL DEFAULT '',
+      address_type TEXT NOT NULL DEFAULT 'home',
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      used_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
 
     CREATE TABLE IF NOT EXISTS favorites (
       customer_id INT NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
@@ -165,6 +215,20 @@ export async function startDatabase() {
       sort_order INT NOT NULL DEFAULT 0,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS banners (
+      id SERIAL PRIMARY KEY,
+      title TEXT NOT NULL DEFAULT '',
+      subtitle TEXT NOT NULL DEFAULT '',
+      button_label TEXT NOT NULL DEFAULT '',
+      link_url TEXT NOT NULL DEFAULT '',
+      image_url TEXT NOT NULL,
+      active BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order INT NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    ALTER TABLE banners ADD COLUMN IF NOT EXISTS product_slug TEXT NOT NULL DEFAULT '';
+    ALTER TABLE banners ADD COLUMN IF NOT EXISTS variant_label TEXT NOT NULL DEFAULT '';
 
     CREATE TABLE IF NOT EXISTS inventory_moves (
       id SERIAL PRIMARY KEY,

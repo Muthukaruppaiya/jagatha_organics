@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { categories, products } from '../../server/src/catalog.js';
+import { banners, categories, products } from '../../server/src/catalog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const imageRoot = path.resolve(__dirname, '../../reference/product-images');
@@ -41,6 +41,7 @@ const catalog = {
     slug: category.slug,
     name: category.name,
     blurb: category.blurb,
+    count: products.filter((product) => product.category === category.slug).length,
   })),
   products: products.map((product) => {
     const variants = product.variants.map((variant) => ({
@@ -57,7 +58,7 @@ const catalog = {
       name: product.name,
       description: product.description,
       featured: product.featured,
-      images: images.get(product.slug) || [],
+      images: images.get(product.slug) || ['/placeholder-product.svg'],
       category: { slug: product.category, name: category?.name || product.category },
       variants,
       fromPricePaise: from,
@@ -65,6 +66,30 @@ const catalog = {
     };
   }),
 };
+
+catalog.banners = banners.map((banner, index) => {
+  const product = catalog.products.find((item) => item.slug === banner.productSlug);
+  const variant = product?.variants.find((item) => item.label === banner.variantLabel) || product?.variants[0];
+  return {
+    id: `banner-${index + 1}`,
+    title: banner.title,
+    subtitle: banner.subtitle,
+    buttonLabel: banner.buttonLabel,
+    link: banner.link,
+    image: banner.image,
+    product: variant
+      ? {
+        slug: product.slug,
+        name: product.name,
+        image: product.images[0] || banner.image,
+        variantId: variant.id,
+        label: variant.label,
+        pricePaise: variant.pricePaise,
+        comparePaise: variant.comparePaise,
+      }
+      : null,
+  };
+});
 
 fs.mkdirSync(publicDir, { recursive: true });
 fs.writeFileSync(path.join(publicDir, 'catalog.json'), JSON.stringify(catalog));

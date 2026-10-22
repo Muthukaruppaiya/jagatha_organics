@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, Navigate } from 'react-router-dom';
+import { Link, Navigate, useSearchParams } from 'react-router-dom';
 import { AdminShell } from './admin.jsx';
-import { api, inr, PAYMENT_LABEL, readStaff, ROLE_LABEL, sourceLabel, STATUS_LABEL, when } from './api.js';
+import { api, inr, readStaff, ROLE_LABEL, sourceLabel, STATUS_LABEL, when } from './api.js';
 
 function useGuard(roles) {
   const person = readStaff();
@@ -65,7 +65,7 @@ export function AdminInventory() {
 
   if (blocked) return blocked;
   return (
-    <AdminShell eyebrow="Stock" title="Inventory" lead="Add a positive number when a batch arrives. Use a minus to correct a count. Website, WhatsApp, and counter sales reduce stock on their own.">
+    <AdminShell eyebrow="Catalog" title="Stock" lead="Add a positive number when a batch arrives. Use a minus to correct a count. Website orders reduce stock on their own, and unpaid or cancelled orders put it back.">
       <div className="desk-stats">
         <article><span>Products</span><strong>{new Set(rows.map((row) => row.productSlug)).size}</strong></article>
         <article><span>Packs on hand</span><strong>{units}</strong></article>
@@ -116,17 +116,18 @@ export function AdminInventory() {
 
 export function AdminImages() {
   const blocked = useGuard(['admin']);
+  const [params] = useSearchParams();
   const [products, setProducts] = useState([]);
-  const [slug, setSlug] = useState('');
+  const [slug, setSlug] = useState(params.get('product') || '');
   const [q, setQ] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.products()
+    api.deskProducts()
       .then((list) => {
         setProducts(list);
-        setSlug(list[0]?.slug || '');
+        setSlug((current) => (list.some((item) => item.slug === current) ? current : list[0]?.slug || ''));
       })
       .catch((err) => setError(err.message));
   }, []);
@@ -297,6 +298,7 @@ export function AdminReports() {
   );
 }
 
+/* Store billing is paused.
 export function AdminBilling() {
   const blocked = useGuard(['admin', 'billing']);
   const [products, setProducts] = useState([]);
@@ -438,6 +440,7 @@ export function AdminBilling() {
     </AdminShell>
   );
 }
+*/
 
 export function AdminStaff() {
   const blocked = useGuard(['admin']);
@@ -477,7 +480,7 @@ export function AdminStaff() {
 
   if (blocked) return blocked;
   return (
-    <AdminShell eyebrow="Access" title="Staff" lead="Billing staff run the counter and stock. Delivery staff update packing and the courier the customer sees.">
+    <AdminShell eyebrow="Access" title="Staff" lead="Billing staff handle stock. Delivery staff update packing and the courier the customer sees.">
       <div className="split">
         <div className="order-table glass">
           {people.map((person) => (
@@ -507,6 +510,240 @@ export function AdminStaff() {
           {saved && <p className="note">{saved}</p>}
           <button className="btn" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Add staff'}</button>
         </form>
+      </div>
+    </AdminShell>
+  );
+}
+
+const EMPTY_BANNER = { title: '', subtitle: '', buttonLabel: 'Order now', link: '', productSlug: '', variantLabel: '', active: true };
+
+function useImagePreview(file) {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    if (!file) {
+      setUrl('');
+      return undefined;
+    }
+    const next = URL.createObjectURL(file);
+    setUrl(next);
+    return () => URL.revokeObjectURL(next);
+  }, [file]);
+  return url;
+}
+
+function BannerFields({ fields, onChange, products }) {
+  const set = (key) => (event) => onChange({ ...fields, [key]: key === 'active' ? event.target.checked : event.target.value });
+  const product = products.find((item) => item.slug === fields.productSlug);
+  const combos = products.filter((item) => item.category.slug === 'gift-boxes');
+  const others = products.filter((item) => item.category.slug !== 'gift-boxes');
+
+  function pickProduct(event) {
+    const next = products.find((item) => item.slug === event.target.value);
+    onChange({
+      ...fields,
+      productSlug: next?.slug || '',
+      variantLabel: next?.variants[0]?.label || '',
+      title: fields.title || next?.name || '',
+      subtitle: fields.subtitle || next?.description || '',
+    });
+  }
+
+  return (
+    <>
+      <div className="banner-pair">
+        <label>
+          Combo customers order
+          <select value={fields.productSlug} onChange={pickProduct}>
+            <option value="">No product (use a link)</option>
+            <optgroup label="Gift boxes">
+              {combos.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+            </optgroup>
+            <optgroup label="Other products">
+              {others.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+            </optgroup>
+          </select>
+        </label>
+        {product && (
+          <label>
+            Pack
+            <select value={fields.variantLabel} onChange={set('variantLabel')}>
+              {product.variants.map((variant) => (
+                <option key={variant.label} value={variant.label}>{variant.label} · {inr(variant.pricePaise)}</option>
+              ))}
+            </select>
+          </label>
+        )}
+      </div>
+      <label>Heading<input value={fields.title} onChange={set('title')} maxLength={90} placeholder="Biotin Gift Box" /></label>
+      <label>Line under the heading<textarea value={fields.subtitle} onChange={set('subtitle')} maxLength={200} rows={2} placeholder="What is inside the box." /></label>
+      <div className="banner-pair">
+        <label>Button text<input value={fields.buttonLabel} onChange={set('buttonLabel')} maxLength={40} placeholder="Order now" /></label>
+        {product
+          ? <p className="muted banner-hint">Clicking this banner opens the {product.name} product page.</p>
+          : <label>Button link<input value={fields.link} onChange={set('link')} maxLength={300} placeholder="/shop/gift-boxes" /></label>}
+      </div>
+      <label className="check-row">
+        <input type="checkbox" checked={fields.active} onChange={set('active')} />
+        <span>Show on the website</span>
+      </label>
+    </>
+  );
+}
+
+function BannerEditor({ banner, products, first, last, busy, onSaved, onMove, onRemove }) {
+  const [fields, setFields] = useState({
+    title: banner.title,
+    subtitle: banner.subtitle,
+    buttonLabel: banner.buttonLabel,
+    link: banner.link,
+    productSlug: banner.productSlug || '',
+    variantLabel: banner.variantLabel || '',
+    active: banner.active,
+  });
+  const [file, setFile] = useState(null);
+  const [saving, setSaving] = useState(false);
+  const [note, setNote] = useState('');
+  const preview = useImagePreview(file);
+
+  async function save(event) {
+    event.preventDefault();
+    setSaving(true);
+    setNote('');
+    try {
+      const saved = await api.saveBanner(banner.id, fields, file);
+      setFile(null);
+      setNote('Saved.');
+      onSaved(saved);
+    } catch (err) {
+      setNote(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className={fields.active ? 'glass banner-card' : 'glass banner-card off'} onSubmit={save}>
+      <div className="banner-thumb">
+        <img src={preview || banner.image} alt="" />
+        {!banner.active && <span className="chip">Hidden</span>}
+        <label className="btn ghost tiny file-btn">
+          Replace image
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+        </label>
+      </div>
+      <div className="form banner-form">
+        <BannerFields fields={fields} onChange={setFields} products={products} />
+        <div className="banner-actions">
+          <button className="btn tiny" type="submit" disabled={saving || busy}>{saving ? 'Saving…' : 'Save changes'}</button>
+          <button className="btn ghost tiny" type="button" disabled={first || busy} onClick={() => onMove(-1)}>Move up</button>
+          <button className="btn ghost tiny" type="button" disabled={last || busy} onClick={() => onMove(1)}>Move down</button>
+          <button className="text" type="button" disabled={busy} onClick={onRemove}>Delete</button>
+        </div>
+        {note && <p className={note === 'Saved.' ? 'status' : 'status error'}>{note}</p>}
+      </div>
+    </form>
+  );
+}
+
+export function AdminBanners() {
+  const blocked = useGuard(['admin']);
+  const [banners, setBanners] = useState([]);
+  const [products, setProducts] = useState([]);
+  const [fields, setFields] = useState(EMPTY_BANNER);
+  const [file, setFile] = useState(null);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const preview = useImagePreview(file);
+  const picked = products.find((item) => item.slug === fields.productSlug);
+
+  useEffect(() => {
+    api.deskBanners().then(setBanners).catch((err) => setError(err.message));
+    api.products().then(setProducts).catch(() => {});
+  }, []);
+
+  async function add(event) {
+    event.preventDefault();
+    if (!file && !picked) {
+      setError('Choose a combo or a banner image first.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      const saved = await api.saveBanner(null, fields, file);
+      setBanners((current) => [...current, saved]);
+      setFields(EMPTY_BANNER);
+      setFile(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function move(position, delta) {
+    const next = [...banners];
+    const [item] = next.splice(position, 1);
+    next.splice(position + delta, 0, item);
+    setBusy(true);
+    setError('');
+    try {
+      setBanners(await api.orderBanners(next.map((banner) => banner.id)));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove(banner) {
+    if (!window.confirm(`Delete the banner "${banner.title || 'without a heading'}"?`)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.removeBanner(banner.id);
+      setBanners((current) => current.filter((item) => item.id !== banner.id));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (blocked) return blocked;
+  const shown = banners.filter((banner) => banner.active).length;
+  return (
+    <AdminShell eyebrow="Homepage" title="Banners" lead="This month's combo offers slide across the top of the home page. Pick the combo and the pack whose price it shows; a customer who clicks the banner opens that product page.">
+      <form className="glass banner-card banner-new" onSubmit={add}>
+        <label className="banner-thumb banner-drop">
+          {preview || picked?.images[0]
+            ? <img src={preview || picked.images[0]} alt="" />
+            : <span><b>Choose a banner image</b><small>Optional for a combo. Wide image, about 1600 × 600</small></span>}
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+        </label>
+        <div className="form banner-form">
+          <h2>Add a combo offer</h2>
+          <BannerFields fields={fields} onChange={setFields} products={products} />
+          <button className="btn" type="submit" disabled={busy}>{busy ? 'Saving…' : 'Add banner'}</button>
+        </div>
+      </form>
+      {error && <p className="status error">{error}</p>}
+      <p className="muted banner-count">{shown} of {banners.length} banner{banners.length === 1 ? '' : 's'} showing on the website.</p>
+      <div className="banner-list">
+        {banners.map((banner, position) => (
+          <BannerEditor
+            key={banner.id}
+            banner={banner}
+            products={products}
+            first={position === 0}
+            last={position === banners.length - 1}
+            busy={busy}
+            onSaved={(saved) => setBanners((current) => current.map((item) => (item.id === saved.id ? saved : item)))}
+            onMove={(delta) => move(position, delta)}
+            onRemove={() => remove(banner)}
+          />
+        ))}
+        {banners.length === 0 && <p className="empty">No banners yet. The home page starts with the shop intro.</p>}
       </div>
     </AdminShell>
   );

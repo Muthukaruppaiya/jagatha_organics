@@ -5,35 +5,90 @@ import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import { getPool } from './db.js';
 import { registerReviewDesk } from './account.js';
+import { registerProductDesk } from './products.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const imageRoot = path.resolve(__dirname, '../../reference/product-images');
 const videoRoot = path.resolve(__dirname, '../../reference/videos');
+const bannerRoot = path.resolve(__dirname, '../../reference/banners');
 
-const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, callback) => {
-      const dir = path.join(imageRoot, 'uploads');
-      fs.mkdirSync(dir, { recursive: true });
-      callback(null, dir);
+function imageUpload(dirFor) {
+  return multer({
+    storage: multer.diskStorage({
+      destination: (_req, _file, callback) => {
+        const dir = dirFor();
+        fs.mkdirSync(dir, { recursive: true });
+        callback(null, dir);
+      },
+      filename: (_req, file, callback) => {
+        const ext = path.extname(file.originalname).toLowerCase();
+        const safe = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '.jpg';
+        callback(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${safe === '.jpeg' ? '.jpg' : safe}`);
+      },
+    }),
+    limits: { fileSize: 8 * 1024 * 1024 },
+    fileFilter: (_req, file, callback) => {
+      if (!/^image\/(jpeg|jpg|png|webp)$/.test(file.mimetype)) {
+        const error = new Error('Upload a JPG, PNG, or WebP image.');
+        error.status = 400;
+        callback(error);
+        return;
+      }
+      callback(null, true);
     },
-    filename: (_req, file, callback) => {
-      const ext = path.extname(file.originalname).toLowerCase();
-      const safe = ['.jpg', '.jpeg', '.png', '.webp'].includes(ext) ? ext : '.jpg';
-      callback(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${safe === '.jpeg' ? '.jpg' : safe}`);
-    },
-  }),
-  limits: { fileSize: 8 * 1024 * 1024 },
-  fileFilter: (_req, file, callback) => {
-    if (!/^image\/(jpeg|jpg|png|webp)$/.test(file.mimetype)) {
-      const error = new Error('Upload a JPG, PNG, or WebP image.');
-      error.status = 400;
-      callback(error);
-      return;
-    }
-    callback(null, true);
-  },
-});
+  });
+}
+
+const upload = imageUpload(() => path.join(imageRoot, 'uploads'));
+const bannerUpload = imageUpload(() => bannerRoot);
+
+function bannerLink(value) {
+  const link = clip(value, 300);
+  if (!link) return '';
+  if (link.startsWith('/') && !link.startsWith('//')) return link;
+  if (/^https?:\/\//i.test(link)) return link;
+  const error = new Error('Button link must start with / for a page on this site, or with https:// for another site.');
+  error.status = 400;
+  throw error;
+}
+
+function removeBannerFile(url) {
+  if (!String(url).startsWith('/banner-images/')) return;
+  const file = path.resolve(bannerRoot, path.basename(String(url)));
+  if (file.startsWith(bannerRoot) && fs.existsSync(file)) fs.unlinkSync(file);
+}
+
+function mapBanner(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    subtitle: row.subtitle,
+    buttonLabel: row.button_label,
+    link: row.link_url,
+    image: row.image_url,
+    productSlug: row.product_slug,
+    variantLabel: row.variant_label,
+    active: row.active,
+    sortOrder: row.sort_order,
+  };
+}
+
+async function bannerProduct(body) {
+  const slug = clip(body?.productSlug, 120);
+  if (!slug) return { slug: '', label: '', image: '' };
+  const { rows } = await getPool().query(
+    `SELECT v.label, p.image_urls[1] AS image FROM variants v JOIN products p ON p.id = v.product_id WHERE p.slug = $1 ORDER BY v.weight_grams`,
+    [slug],
+  );
+  if (!rows.length) {
+    const error = new Error('That product is not on the shelf.');
+    error.status = 400;
+    throw error;
+  }
+  const wanted = clip(body?.variantLabel, 40);
+  const label = rows.some((row) => row.label === wanted) ? wanted : rows[0].label;
+  return { slug, label, image: rows[0].image || '' };
+}
 
 function clip(value, max) {
   return String(value ?? '').trim().slice(0, max);
@@ -48,6 +103,10 @@ function httpUrl(value) {
     throw error;
   }
   return url;
+}
+
+export async function addEvent(client, orderId, status, note = '') {
+  await client.query('INSERT INTO order_events (order_id, status, note) VALUES ($1, $2, $3)', [orderId, status, note]);
 }
 
 export async function reserveLines(client, lines, { orderId, reason, staffEmail }) {
@@ -176,6 +235,7 @@ const videoUpload = multer({
 
 export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPhone, STATUSES }) {
   registerReviewDesk(app, { requireStaff, allow });
+  registerProductDesk(app, { requireStaff, allow });
   app.get('/api/admin/inventory', requireStaff, allow('admin', 'billing'), async (_req, res, next) => {
     try {
       const { rows } = await getPool().query(
@@ -183,7 +243,7 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
          FROM variants v
          JOIN products p ON p.id = v.product_id
          JOIN categories c ON c.id = p.category_id
-         ORDER BY c.sort_order, p.name, v.weight_grams`,
+         ORDER BY c.sort_order, c.id, p.sort_order, p.name, v.weight_grams`,
       );
       res.json(rows.map((row) => ({
         variantId: row.id,
@@ -306,13 +366,13 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
       const pool = getPool();
       const totals = await pool.query(
         `SELECT
-           COUNT(*) FILTER (WHERE status <> 'cancelled' AND channel = 'online')::int AS online_orders,
-           COUNT(*) FILTER (WHERE status <> 'cancelled' AND channel = 'whatsapp')::int AS whatsapp_orders,
-           COUNT(*) FILTER (WHERE status <> 'cancelled' AND channel = 'store')::int AS store_bills,
+           COUNT(*) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'online')::int AS online_orders,
+           COUNT(*) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'whatsapp')::int AS whatsapp_orders,
+           COUNT(*) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'store')::int AS store_bills,
            COUNT(*) FILTER (WHERE status = 'cancelled')::int AS cancelled,
-           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND channel = 'online'), 0)::int AS online_paise,
-           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND channel = 'whatsapp'), 0)::int AS whatsapp_paise,
-           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND channel = 'store'), 0)::int AS store_paise
+           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'online'), 0)::int AS online_paise,
+           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'whatsapp'), 0)::int AS whatsapp_paise,
+           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting' AND channel = 'store'), 0)::int AS store_paise
          FROM orders
          WHERE created_at::date BETWEEN $1::date AND $2::date`,
         [from, to],
@@ -321,7 +381,7 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
         `SELECT i.product_name, SUM(i.quantity)::int AS quantity, SUM(i.unit_price_paise * i.quantity)::int AS paise
          FROM order_items i
          JOIN orders o ON o.id = i.order_id
-         WHERE o.status <> 'cancelled' AND o.created_at::date BETWEEN $1::date AND $2::date
+         WHERE o.status <> 'cancelled' AND payment_status <> 'awaiting' AND o.created_at::date BETWEEN $1::date AND $2::date
          GROUP BY i.product_name
          ORDER BY paise DESC
          LIMIT 8`,
@@ -329,8 +389,8 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
       );
       const daily = await pool.query(
         `SELECT created_at::date AS day,
-           COUNT(*) FILTER (WHERE status <> 'cancelled')::int AS orders,
-           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled'), 0)::int AS paise
+           COUNT(*) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting')::int AS orders,
+           COALESCE(SUM(total_paise) FILTER (WHERE status <> 'cancelled' AND payment_status <> 'awaiting'), 0)::int AS paise
          FROM orders
          WHERE created_at::date BETWEEN $1::date AND $2::date
          GROUP BY 1
@@ -393,6 +453,7 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
     }
   });
 
+  /* Store billing is paused.
   app.post('/api/admin/pos', requireStaff, allow('admin', 'billing'), async (req, res, next) => {
     const name = clip(req.body?.customerName, 80) || 'Walk-in';
     const phone = cleanPhone(req.body?.phone);
@@ -429,13 +490,15 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
       await client.query('COMMIT');
       res.status(201).json(await orderWithItems(orderNumber));
     } catch (error) {
-      try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+      try { await client.query('ROLLBACK'); } catch { // ignore
+      }
       if (error.status === 400) return res.status(400).json({ error: error.message });
       next(error);
     } finally {
       client.release();
     }
   });
+  */
 
   app.post('/api/admin/videos', requireStaff, allow('admin'), videoUpload.single('video'), async (req, res, next) => {
     try {
@@ -464,6 +527,109 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
         const file = path.resolve(videoRoot, path.basename(src));
         if (file.startsWith(path.resolve(videoRoot)) && fs.existsSync(file)) fs.unlinkSync(file);
       }
+      res.json({ ok: true });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.get('/api/admin/banners', requireStaff, allow('admin'), async (_req, res, next) => {
+    try {
+      const { rows } = await getPool().query('SELECT * FROM banners ORDER BY sort_order, id');
+      res.json(rows.map(mapBanner));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/admin/banners', requireStaff, allow('admin'), bannerUpload.single('image'), async (req, res, next) => {
+    try {
+      const product = await bannerProduct(req.body);
+      const image = req.file ? `/banner-images/${req.file.filename}` : product.image;
+      if (!image) return res.status(400).json({ error: 'Choose a combo or a banner image.' });
+      const inserted = await getPool().query(
+        `INSERT INTO banners (title, subtitle, button_label, link_url, image_url, active, product_slug, variant_label, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM banners))
+         RETURNING *`,
+        [
+          clip(req.body?.title, 90),
+          clip(req.body?.subtitle, 200),
+          clip(req.body?.buttonLabel, 40),
+          product.slug ? '' : bannerLink(req.body?.link),
+          image,
+          req.body?.active !== 'false',
+          product.slug,
+          product.label,
+        ],
+      );
+      res.status(201).json(mapBanner(inserted.rows[0]));
+    } catch (error) {
+      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      next(error);
+    }
+  });
+
+  app.patch('/api/admin/banners/:id', requireStaff, allow('admin'), bannerUpload.single('image'), async (req, res, next) => {
+    try {
+      const id = Number(req.params.id);
+      const current = await getPool().query('SELECT image_url FROM banners WHERE id = $1', [id]);
+      if (!current.rows[0]) {
+        if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        return res.status(404).json({ error: 'Banner not found.' });
+      }
+      const image = req.file ? `/banner-images/${req.file.filename}` : current.rows[0].image_url;
+      const product = await bannerProduct(req.body);
+      const updated = await getPool().query(
+        `UPDATE banners
+         SET title = $2, subtitle = $3, button_label = $4, link_url = $5, image_url = $6, active = $7,
+             product_slug = $8, variant_label = $9
+         WHERE id = $1
+         RETURNING *`,
+        [
+          id,
+          clip(req.body?.title, 90),
+          clip(req.body?.subtitle, 200),
+          clip(req.body?.buttonLabel, 40),
+          product.slug ? '' : bannerLink(req.body?.link),
+          image,
+          req.body?.active !== 'false',
+          product.slug,
+          product.label,
+        ],
+      );
+      if (req.file) removeBannerFile(current.rows[0].image_url);
+      res.json(mapBanner(updated.rows[0]));
+    } catch (error) {
+      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      next(error);
+    }
+  });
+
+  app.put('/api/admin/banners/order', requireStaff, allow('admin'), async (req, res, next) => {
+    const ids = Array.isArray(req.body?.ids) ? req.body.ids.map(Number).filter(Number.isInteger) : [];
+    if (!ids.length) return res.status(400).json({ error: 'Send the banner order.' });
+    const client = await getPool().connect();
+    try {
+      await client.query('BEGIN');
+      for (const [index, id] of ids.entries()) {
+        await client.query('UPDATE banners SET sort_order = $2 WHERE id = $1', [id, index + 1]);
+      }
+      await client.query('COMMIT');
+      const { rows } = await client.query('SELECT * FROM banners ORDER BY sort_order, id');
+      res.json(rows.map(mapBanner));
+    } catch (error) {
+      try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+      next(error);
+    } finally {
+      client.release();
+    }
+  });
+
+  app.delete('/api/admin/banners/:id', requireStaff, allow('admin'), async (req, res, next) => {
+    try {
+      const found = await getPool().query('DELETE FROM banners WHERE id = $1 RETURNING image_url', [Number(req.params.id)]);
+      if (!found.rows[0]) return res.status(404).json({ error: 'Banner not found.' });
+      removeBannerFile(found.rows[0].image_url);
       res.json({ ok: true });
     } catch (error) {
       next(error);
@@ -559,6 +725,12 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
          WHERE id = $1`,
         [orderId, status || null, note, courierName, trackingNumber, trackingUrl],
       );
+      if (status && status !== previous) {
+        const shipNote = status === 'shipped' && (courierName || trackingNumber)
+          ? [courierName, trackingNumber].filter(Boolean).join(' · ')
+          : '';
+        await addEvent(client, orderId, status, shipNote);
+      }
       await client.query('COMMIT');
       res.json(await orderWithItems(orderNumber));
     } catch (error) {

@@ -6,12 +6,29 @@ export function AccountLogin() {
   const navigate = useNavigate();
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' });
+  const [code, setCode] = useState('');
+  const [sent, setSent] = useState(null);
+  const [wait, setWait] = useState(0);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (wait <= 0) return undefined;
+    const timer = window.setTimeout(() => setWait((value) => value - 1), 1000);
+    return () => window.clearTimeout(timer);
+  }, [wait]);
+
   if (readCustomer()) return <Navigate to="/account" replace />;
 
   function set(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  async function sendCode() {
+    const result = await api.registerStart(form);
+    setSent(result);
+    setCode('');
+    setWait(30);
   }
 
   async function submit(event) {
@@ -19,11 +36,15 @@ export function AccountLogin() {
     setBusy(true);
     setError('');
     try {
-      const result = mode === 'login'
-        ? await api.accountLogin(form.email, form.password)
-        : await api.register(form);
-      saveCustomer(result);
-      navigate('/account');
+      if (mode === 'login') {
+        saveCustomer(await api.accountLogin(form.email, form.password));
+        navigate('/account');
+      } else if (!sent) {
+        await sendCode();
+      } else {
+        saveCustomer(await api.registerVerify(sent.email, code));
+        navigate('/account');
+      }
     } catch (err) {
       setError(err.message);
     } finally {
@@ -31,23 +52,66 @@ export function AccountLogin() {
     }
   }
 
+  async function resend() {
+    setBusy(true);
+    setError('');
+    try {
+      await sendCode();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function switchMode() {
+    setMode(mode === 'login' ? 'register' : 'login');
+    setSent(null);
+    setError('');
+  }
+
+  const verifying = mode === 'register' && sent;
   return (
-    <div className="wrap page narrow">
-      <p className="eyebrow">Your account</p>
-      <h1>{mode === 'login' ? 'Sign in' : 'Create an account'}</h1>
-      <p className="lead">See your orders, save favourite packs, and write a review for the kitchen to approve.</p>
+    <div className="wrap page narrow auth">
+      <h1>{mode === 'login' ? 'Sign in' : verifying ? 'Verify your email' : 'Create account'}</h1>
       <form className="glass form" onSubmit={submit}>
-        {mode === 'register' && (
+        {verifying ? (
           <>
-            <label>Name<input value={form.name} onChange={(event) => set('name', event.target.value)} required /></label>
-            <label>Mobile<input value={form.phone} onChange={(event) => set('phone', event.target.value)} inputMode="tel" required /></label>
+            <p className="muted">Enter the 6-digit code sent to <b>{sent.email}</b>.</p>
+            {!sent.delivered && <p className="note">Email is not set up on this server yet, so the code was written to the server log.</p>}
+            <input
+              className="otp-input"
+              value={code}
+              onChange={(event) => setCode(event.target.value.replace(/\D/g, '').slice(0, 6))}
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              placeholder="••••••"
+              aria-label="Verification code"
+              autoFocus
+              required
+            />
+            {error && <p className="status error">{error}</p>}
+            <button className="btn" type="submit" disabled={busy || code.length !== 6}>{busy ? 'Checking…' : 'Verify and create account'}</button>
+            <div className="otp-links">
+              <button className="text-btn" type="button" onClick={resend} disabled={busy || wait > 0}>{wait > 0 ? `Resend code in ${wait}s` : 'Resend code'}</button>
+              <button className="text-btn" type="button" onClick={() => { setSent(null); setError(''); }}>Change email</button>
+            </div>
+          </>
+        ) : (
+          <>
+            {mode === 'register' && (
+              <>
+                <label>Name<input value={form.name} onChange={(event) => set('name', event.target.value)} required autoComplete="name" /></label>
+                <label>Mobile<input value={form.phone} onChange={(event) => set('phone', event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="tel" required autoComplete="tel-national" /></label>
+              </>
+            )}
+            <label>Email<input type="email" value={form.email} onChange={(event) => set('email', event.target.value)} required autoComplete="email" /></label>
+            <label>Password<input type="password" value={form.password} onChange={(event) => set('password', event.target.value)} minLength={8} required autoComplete={mode === 'login' ? 'current-password' : 'new-password'} /></label>
+            {error && <p className="status error">{error}</p>}
+            <button className="btn" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Send verification code'}</button>
           </>
         )}
-        <label>Email<input type="email" value={form.email} onChange={(event) => set('email', event.target.value)} required /></label>
-        <label>Password<input type="password" value={form.password} onChange={(event) => set('password', event.target.value)} minLength={8} required /></label>
-        {error && <p className="status error">{error}</p>}
-        <button className="btn" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button>
-        <button className="text" type="button" onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}>
+        <button className="text" type="button" onClick={switchMode}>
           {mode === 'login' ? 'New here? Create an account' : 'Already have an account? Sign in'}
         </button>
       </form>
@@ -135,7 +199,7 @@ export function AccountHome() {
                 ))}
               </ul>
               {order.courierName && <p className="muted">Courier {order.courierName} {order.trackingNumber}</p>}
-              <Link to="/track">Track</Link>
+              <Link to={`/track?number=${order.orderNumber}&phone=${order.phone}`}>Track order</Link>
             </article>
           ))}
         </section>

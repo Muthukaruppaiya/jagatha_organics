@@ -1,10 +1,12 @@
 import { BrowserRouter, Route, Routes } from 'react-router-dom';
 import { CartProvider } from './cart.jsx';
 import { StoreLayout } from './layout.jsx';
-import { Cart, Checkout, Contact, Home, Missing, OrderDone, Product, Shop, Track } from './pages.jsx';
+import { Cart, Contact, Home, Missing, Product, Shop } from './pages.jsx';
+import { Checkout, OrderDone, Track } from './checkout.jsx';
 import { AccountHome, AccountLogin } from './account.jsx';
 import { AdminHome, AdminLogin, AdminOrder } from './admin.jsx';
-import { AdminBilling, AdminImages, AdminInventory, AdminReports, AdminReviews, AdminStaff, AdminVideos } from './desk.jsx';
+import { AdminBanners, AdminImages, AdminInventory, AdminReports, AdminReviews, AdminStaff, AdminVideos } from './desk.jsx';
+import { AdminProducts } from './products-desk.jsx';
 
 export default function App() {
   return (
@@ -28,9 +30,13 @@ export default function App() {
           <Route path="admin/login" element={<AdminLogin />} />
           <Route path="admin" element={<AdminHome />} />
           <Route path="admin/orders/:orderNumber" element={<AdminOrder />} />
+          {/* Store billing is paused.
           <Route path="admin/billing" element={<AdminBilling />} />
+          */}
+          <Route path="admin/products" element={<AdminProducts />} />
           <Route path="admin/inventory" element={<AdminInventory />} />
           <Route path="admin/images" element={<AdminImages />} />
+          <Route path="admin/banners" element={<AdminBanners />} />
           <Route path="admin/videos" element={<AdminVideos />} />
           <Route path="admin/reviews" element={<AdminReviews />} />
           <Route path="admin/reports" element={<AdminReports />} />

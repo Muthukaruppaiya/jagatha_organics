@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { Link, NavLink, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { api, inr, PAYMENT_LABEL, readStaff, ROLE_LABEL, sourceLabel, STATUS_LABEL, whatsAppLink, when } from './api.js';
+import { addressText, api, inr, PAYMENT_STATUS_LABEL, paymentLabel, readStaff, ROLE_LABEL, sourceLabel, STATUS_LABEL, whatsAppLink, when } from './api.js';
 
 const STATUSES = ['pending', 'confirmed', 'packed', 'shipped', 'delivered', 'cancelled'];
 
@@ -65,20 +65,24 @@ export function AdminLogin() {
 
 const ICONS = {
   orders: 'M6 4h12v16H6zM9 8h6M9 12h6M9 16h4',
-  billing: 'M5 7h14v12H5zM5 11h14M8 15h3',
+  // billing: 'M5 7h14v12H5zM5 11h14M8 15h3',
   inventory: 'M4 8l8-4 8 4-8 4zM4 12l8 4 8-4M4 16l8 4 8-4',
   images: 'M4 6h16v12H4zM8 14l2.5-3 2 2.2L16 9l4 5',
   reports: 'M5 19V9M12 19V5M19 19v-6',
   staff: 'M12 12a3.2 3.2 0 1 0-3.2-3.2A3.2 3.2 0 0 0 12 12zM6 19c.6-2.4 2.8-4 6-4s5.4 1.6 6 4',
   videos: 'M5 6h10v12H5zM15 10l5-2v8l-5-2z',
+  banners: 'M3 6h18v12H3zM7 10h6M7 14h4',
+  products: 'M4 7l8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10',
   reviews: 'M6 5h12v10H9l-3 3z',
 };
 
 const LINKS = [
   { to: '/admin', label: 'Orders', icon: 'orders', end: true, roles: ['admin', 'billing', 'delivery'] },
-  { to: '/admin/billing', label: 'Store billing', icon: 'billing', roles: ['admin', 'billing'] },
-  { to: '/admin/inventory', label: 'Inventory', icon: 'inventory', roles: ['admin', 'billing'] },
+  // { to: '/admin/billing', label: 'Store billing', icon: 'billing', roles: ['admin', 'billing'] },
+  { to: '/admin/products', label: 'Products', icon: 'products', roles: ['admin'] },
+  { to: '/admin/inventory', label: 'Stock', icon: 'inventory', roles: ['admin', 'billing'] },
   { to: '/admin/images', label: 'Images', icon: 'images', roles: ['admin'] },
+  { to: '/admin/banners', label: 'Banners', icon: 'banners', roles: ['admin'] },
   { to: '/admin/videos', label: 'Videos', icon: 'videos', roles: ['admin'] },
   { to: '/admin/reviews', label: 'Reviews', icon: 'reviews', roles: ['admin', 'billing'] },
   { to: '/admin/reports', label: 'Reports', icon: 'reports', roles: ['admin', 'billing'] },
@@ -165,7 +169,7 @@ export function AdminHome() {
   }, [status, q, navigate]);
 
   return (
-    <AdminShell eyebrow="Desk" title="Orders" lead="Website, WhatsApp, and counter bills land here.">
+    <AdminShell eyebrow="Desk" title="Orders" lead="Website orders land here. Pack an order once it shows Paid; unpaid orders cancel themselves after 30 minutes and return their stock.">
       {summary && (
         <div className="desk-stats">
           <article><span>Open queue</span><strong>{summary.pending}</strong></article>
@@ -191,7 +195,9 @@ export function AdminHome() {
               <b>{order.orderNumber} · {order.customerName}</b>
               <small>{when(order.createdAt)} · {order.phone || 'No phone'} · {order.city}</small>
             </div>
-            <span className={`chip ${order.channel || 'online'}`}>{sourceLabel(order.channel)}</span>
+            <span className={`chip pay-${order.paymentStatus || order.channel || 'online'}`}>
+              {order.paymentStatus ? PAYMENT_STATUS_LABEL[order.paymentStatus] : sourceLabel(order.channel)}
+            </span>
             <span className={`tag ${order.status}`}>{STATUS_LABEL[order.status]}</span>
             <strong>{inr(order.totalPaise)}</strong>
           </Link>
@@ -292,7 +298,7 @@ export function AdminOrder() {
               </li>
             ))}
           </ul>
-          <p className="total"><span>{PAYMENT_LABEL[order.paymentMethod] || 'Payment'}</span><b>{inr(order.totalPaise)}</b></p>
+          <p className="total"><span>{paymentLabel(order)}</span><b>{inr(order.totalPaise)}</b></p>
           <p className="muted">{sourceLabel(order.channel)} order</p>
           {order.phone && (
             <a className="btn wa" href={whatsAppLink(order.phone, `Hello ${order.customerName}, this is Jagatha Organics about order ${order.orderNumber}.`)} target="_blank" rel="noreferrer">Reply on WhatsApp</a>
@@ -306,7 +312,11 @@ export function AdminOrder() {
             {order.phone && <a href={`tel:+91${order.phone}`}>{order.phone}</a>}
             {order.email && <a href={`mailto:${order.email}`}>{order.email}</a>}
           </p>
-          <p>{order.addressLine}<br />{order.city} {order.pincode}</p>
+          <p>
+            {order.addressType && <span className="chip">{order.addressType}</span>}{' '}
+            {addressText(order)}
+            {order.altPhone && <><br />Alternate phone: <a href={`tel:+91${order.altPhone}`}>{order.altPhone}</a></>}
+          </p>
           <label>Status
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               {statusOptions.map((item) => <option key={item} value={item}>{STATUS_LABEL[item]}</option>)}

@@ -1,25 +1,57 @@
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { useLayoutEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useState } from 'react';
 import { useCart } from './cart.jsx';
-import { readCustomer } from './api.js';
+import { api, readCustomer } from './api.js';
+
+function Icon({ path }) {
+  return (
+    <svg className="ico" viewBox="0 0 24 24" aria-hidden="true">
+      <path d={path} />
+    </svg>
+  );
+}
+
+const ICON = {
+  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4',
+  user: 'M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM5 20c1-3.5 3.6-5 7-5s6 1.5 7 5',
+  bag: 'M6 8h12l-1 12H7zM9 8a3 3 0 0 1 6 0',
+  menu: 'M4 7h16M4 12h16M4 17h16',
+  close: 'M6 6l12 12M18 6L6 18',
+};
 
 export function StoreLayout() {
   const { count } = useCart();
   const [open, setOpen] = useState(false);
+  const [searching, setSearching] = useState(false);
   const [query, setQuery] = useState('');
+  const [categories, setCategories] = useState([]);
   const location = useLocation();
   const navigate = useNavigate();
   const customer = readCustomer();
 
+  useEffect(() => {
+    api.categories()
+      .then((list) => setCategories(Array.isArray(list) ? list.filter((category) => category.count !== 0) : []))
+      .catch(() => {});
+  }, []);
+
   useLayoutEffect(() => {
     window.scrollTo(0, 0);
+    setSearching(false);
+    setOpen(false);
   }, [location.pathname, location.search]);
+
+  useEffect(() => {
+    if (!searching) return undefined;
+    const close = (event) => event.key === 'Escape' && setSearching(false);
+    window.addEventListener('keydown', close);
+    return () => window.removeEventListener('keydown', close);
+  }, [searching]);
 
   function search(event) {
     event.preventDefault();
     const q = query.trim();
     navigate(q ? `/shop?q=${encodeURIComponent(q)}` : '/shop');
-    setOpen(false);
   }
 
   return (
@@ -33,76 +65,93 @@ export function StoreLayout() {
               <small>Organics</small>
             </span>
           </Link>
-          <form className="nav-search" onSubmit={search}>
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search laddus, bars, snacks…" aria-label="Search products" />
-            <button type="submit">Search</button>
-          </form>
           <div className="nav-actions">
-            <NavLink className="account-link" to={customer ? '/account' : '/account/login'}>{customer ? 'Account' : 'Sign in'}</NavLink>
-            <Link to="/cart" className="cart-link">
-              Cart
-              <b>{count}</b>
+            <button
+              className={searching ? 'icon-btn on' : 'icon-btn'}
+              type="button"
+              aria-label={searching ? 'Close search' : 'Search'}
+              aria-expanded={searching}
+              onClick={(event) => { event.stopPropagation(); setSearching((value) => !value); setOpen(false); }}
+            >
+              <Icon path={searching ? ICON.close : ICON.search} />
+            </button>
+            <NavLink className="icon-btn account-link" to={customer ? '/account' : '/account/login'} aria-label={customer ? 'Account' : 'Sign in'}>
+              <Icon path={ICON.user} />
+            </NavLink>
+            <Link to="/cart" className="icon-btn cart-link" aria-label={`Cart, ${count} item${count === 1 ? '' : 's'}`}>
+              <Icon path={ICON.bag} />
+              {count > 0 && <b>{count}</b>}
             </Link>
-            <button className="menu" type="button" aria-expanded={open} aria-label="Open menu" onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); }}>
-              <span />
-              <span />
+            <button
+              className="icon-btn menu"
+              type="button"
+              aria-expanded={open}
+              aria-label="Menu"
+              onClick={(event) => { event.stopPropagation(); setOpen((value) => !value); setSearching(false); }}
+            >
+              <Icon path={open ? ICON.close : ICON.menu} />
             </button>
           </div>
         </div>
+        {searching && (
+          <form className="nav-search" onSubmit={search} onClick={(event) => event.stopPropagation()}>
+            <Icon path={ICON.search} />
+            <input
+              autoFocus
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search products"
+              aria-label="Search products"
+              enterKeyHint="search"
+            />
+            <button type="submit">Search</button>
+          </form>
+        )}
         <nav className="subnav" aria-label="Shop">
-          <NavLink to="/" end>Home</NavLink>
-          <NavLink to="/shop" end>Shop</NavLink>
-          <NavLink to="/shop/laddu">Laddu</NavLink>
-          <NavLink to="/shop/no-sugar-no-jaggery">No sugar</NavLink>
-          <NavLink to="/shop/energy-delight">Energy</NavLink>
-          <NavLink to="/shop/snacks">Snacks</NavLink>
-          <NavLink to="/shop/gift-boxes">Gift boxes</NavLink>
+          <NavLink to="/shop" end>All</NavLink>
+          {categories.map((category) => (
+            <NavLink key={category.slug} to={`/shop/${category.slug}`}>{category.name}</NavLink>
+          ))}
           <NavLink to="/track">Track</NavLink>
           <NavLink to="/contact">Contact</NavLink>
         </nav>
         <nav className={open ? 'links open' : 'links'} onClick={(event) => event.stopPropagation()}>
-          <NavLink to="/" end onClick={() => setOpen(false)}>Home</NavLink>
-          <NavLink to="/shop" end onClick={() => setOpen(false)}>Shop</NavLink>
-          <NavLink to="/shop/laddu" onClick={() => setOpen(false)}>Laddu</NavLink>
-          <NavLink to="/shop/no-sugar-no-jaggery" onClick={() => setOpen(false)}>No sugar</NavLink>
-          <NavLink to="/shop/energy-delight" onClick={() => setOpen(false)}>Energy</NavLink>
-          <NavLink to="/shop/snacks" onClick={() => setOpen(false)}>Snacks</NavLink>
-          <NavLink to="/shop/gift-boxes" onClick={() => setOpen(false)}>Gift boxes</NavLink>
-          <NavLink to="/track" onClick={() => setOpen(false)}>Track</NavLink>
-          <NavLink to="/contact" onClick={() => setOpen(false)}>Contact</NavLink>
-          <NavLink to={customer ? '/account' : '/account/login'} onClick={() => setOpen(false)}>{customer ? 'Account' : 'Sign in'}</NavLink>
+          <NavLink to="/shop" end>All products</NavLink>
+          {categories.map((category) => (
+            <NavLink key={category.slug} to={`/shop/${category.slug}`}>{category.name}</NavLink>
+          ))}
+          <NavLink to="/track">Track order</NavLink>
+          <NavLink to="/contact">Contact</NavLink>
+          <NavLink to={customer ? '/account' : '/account/login'}>{customer ? 'Account' : 'Sign in'}</NavLink>
         </nav>
       </header>
       <main key={location.pathname}>
         <Outlet />
       </main>
+      <a
+        className="wa-float"
+        href={`https://wa.me/919884126032?text=${encodeURIComponent('Hello Jagatha Organics, I have a question.')}`}
+        target="_blank"
+        rel="noreferrer"
+        aria-label="Chat on WhatsApp"
+      >
+        <svg viewBox="0 0 32 32" aria-hidden="true">
+          <path d="M16 3a13 13 0 0 0-11.2 19.6L3 29l6.6-1.7A13 13 0 1 0 16 3zm0 23.6a10.6 10.6 0 0 1-5.4-1.5l-.4-.2-3.9 1 1-3.8-.3-.4A10.6 10.6 0 1 1 16 26.6zm5.8-7.9c-.3-.2-1.9-.9-2.2-1s-.5-.2-.7.2-.8 1-1 1.2-.4.2-.7.1a8.7 8.7 0 0 1-4.3-3.8c-.3-.6.3-.5.9-1.7.1-.2 0-.4 0-.5l-1-2.4c-.3-.6-.5-.5-.7-.5h-.6a1.2 1.2 0 0 0-.9.4 3.6 3.6 0 0 0-1.1 2.7 6.3 6.3 0 0 0 1.3 3.3 14.4 14.4 0 0 0 5.5 4.9c2 .9 2.8 1 3.9.8a3.3 3.3 0 0 0 2.1-1.5 2.7 2.7 0 0 0 .2-1.5c-.1-.1-.3-.2-.6-.4z" />
+        </svg>
+      </a>
       <footer className="footer">
-        <div className="wrap foot-grid">
-          <div>
-            <p className="brand foot-brand"><span className="mark" /> Jagatha Organics</p>
-            <p>Millet sweets, protein bars, and snacks packed in Pallikaranai, Chennai.</p>
-          </div>
-          <div>
-            <h2>Visit</h2>
-            <p>Pallikaranai, Chennai<br />Tamil Nadu 600100</p>
-            <p><a href="tel:+919884126032">+91 98841 26032</a><br /><a href="mailto:jagathaorganics@gmail.com">jagathaorganics@gmail.com</a></p>
-          </div>
-          <div>
-            <h2>Shelf</h2>
-            <p><Link to="/shop/laddu">Laddu</Link></p>
-            <p><Link to="/shop/no-sugar-no-jaggery">No sugar, no jaggery</Link></p>
-            <p><Link to="/shop/snacks">Snacks</Link></p>
-            <p><Link to="/shop/gift-boxes">Gift boxes</Link></p>
-          </div>
-          <div>
-            <h2>Orders</h2>
-            <p><Link to="/track">Track an order</Link></p>
-            <p><Link to="/cart">Cart</Link></p>
-            <p><a href="https://www.instagram.com/jagathaorganics/" target="_blank" rel="noreferrer">Instagram</a></p>
-            <p><Link to="/admin/login">Admin</Link></p>
-          </div>
+        <div className="wrap foot-row">
+          <p className="brand foot-brand"><span className="mark" /> Jagatha Organics</p>
+          <nav className="foot-links" aria-label="Footer">
+            <a href="tel:+919884126032">+91 98841 26032</a>
+            <a href="mailto:jagathaorganics@gmail.com">Email</a>
+            <a href="https://wa.me/919884126032" target="_blank" rel="noreferrer">WhatsApp</a>
+            <a href="https://www.instagram.com/jagathaorganics/" target="_blank" rel="noreferrer">Instagram</a>
+            <Link to="/track">Track order</Link>
+            <Link to="/admin/login">Admin</Link>
+          </nav>
         </div>
-        <p className="fine">© {new Date().getFullYear()} Jagatha Organics. Eat healthy, stay healthy.</p>
+        <p className="fine">© {new Date().getFullYear()} Jagatha Organics · Pallikaranai, Chennai</p>
       </footer>
     </div>
   );

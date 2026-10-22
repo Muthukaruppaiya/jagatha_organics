@@ -72,6 +72,47 @@ export const api = {
     headers: { 'Content-Type': 'application/json', ...customerHeaders() },
     body: JSON.stringify(body),
   }),
+  confirmPayment: (orderNumber, body) => request(`/api/orders/${orderNumber}/pay`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  }),
+  deskProducts: () => request('/api/admin/products', { headers: authHeaders() }),
+  saveProduct: (slug, body) => request(slug ? `/api/admin/products/${slug}` : '/api/admin/products', {
+    method: slug ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  }),
+  removeProduct: (slug) => request(`/api/admin/products/${slug}`, { method: 'DELETE', headers: authHeaders() }),
+  deskCategories: () => request('/api/admin/categories', { headers: authHeaders() }),
+  saveCategory: (slug, body) => request(slug ? `/api/admin/categories/${slug}` : '/api/admin/categories', {
+    method: slug ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(body),
+  }),
+  removeCategory: (slug) => request(`/api/admin/categories/${slug}`, { method: 'DELETE', headers: authHeaders() }),
+  banners: () => orCatalog(async () => {
+    const data = await request('/api/banners');
+    if (!Array.isArray(data)) throw new Error('Request failed');
+    return data;
+  }, (catalog) => catalog.banners || []),
+  deskBanners: () => request('/api/admin/banners', { headers: authHeaders() }),
+  saveBanner: (id, fields, file) => {
+    const body = new FormData();
+    for (const [key, value] of Object.entries(fields)) body.append(key, String(value));
+    if (file) body.append('image', file);
+    return request(id ? `/api/admin/banners/${id}` : '/api/admin/banners', {
+      method: id ? 'PATCH' : 'POST',
+      headers: authHeaders(),
+      body,
+    });
+  },
+  orderBanners: (ids) => request('/api/admin/banners/order', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ ids }),
+  }),
+  removeBanner: (id) => request(`/api/admin/banners/${id}`, { method: 'DELETE', headers: authHeaders() }),
   videos: () => request('/api/videos'),
   uploadVideo: (title, file) => {
     const body = new FormData();
@@ -80,11 +121,23 @@ export const api = {
     return request('/api/admin/videos', { method: 'POST', headers: authHeaders(), body });
   },
   removeVideo: (id) => request(`/api/admin/videos/${id}`, { method: 'DELETE', headers: authHeaders() }),
-  register: (body) => request('/api/account/register', {
+  registerStart: (body) => request('/api/account/register/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }),
+  registerVerify: (email, code) => request('/api/account/register/verify', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code }),
+  }),
+  addresses: () => request('/api/account/addresses', { headers: customerHeaders() }),
+  saveAddress: (id, body) => request(id ? `/api/account/addresses/${id}` : '/api/account/addresses', {
+    method: id ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'application/json', ...customerHeaders() },
+    body: JSON.stringify(body),
+  }),
+  removeAddress: (id) => request(`/api/account/addresses/${id}`, { method: 'DELETE', headers: customerHeaders() }),
   accountLogin: (email, password) => request('/api/account/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -156,11 +209,11 @@ export const api = {
     if (to) query.set('to', to);
     return request(`/api/admin/reports?${query}`, { headers: authHeaders() });
   },
-  createBill: (body) => request('/api/admin/pos', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...authHeaders() },
-    body: JSON.stringify(body),
-  }),
+  // createBill: (body) => request('/api/admin/pos', {
+  //   method: 'POST',
+  //   headers: { 'Content-Type': 'application/json', ...authHeaders() },
+  //   body: JSON.stringify(body),
+  // }),
   staffList: () => request('/api/admin/staff', { headers: authHeaders() }),
   createStaff: (body) => request('/api/admin/staff', {
     method: 'POST',
@@ -194,13 +247,71 @@ export const STATUS_LABEL = {
 };
 
 export const PAYMENT_LABEL = {
+  online: 'Online payment',
   cod: 'Cash on delivery',
   whatsapp: 'WhatsApp · cash on delivery',
   cash: 'Cash at the counter',
   upi: 'UPI at the counter',
 };
 
+export const PAYMENT_STATUS_LABEL = {
+  paid: 'Paid',
+  awaiting: 'Awaiting payment',
+  expired: 'Payment not completed',
+};
+
+export function paymentLabel(order) {
+  if (order.paymentMethod === 'online') return `${PAYMENT_LABEL.online} · ${PAYMENT_STATUS_LABEL[order.paymentStatus] || 'Awaiting payment'}`;
+  return PAYMENT_LABEL[order.paymentMethod] || order.paymentMethod;
+}
+
+let razorpayScript;
+export function loadRazorpay() {
+  if (window.Razorpay) return Promise.resolve(window.Razorpay);
+  if (!razorpayScript) {
+    razorpayScript = new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+      script.onload = () => resolve(window.Razorpay);
+      script.onerror = () => {
+        razorpayScript = null;
+        reject(new Error('The payment window could not load. Check the connection and try again.'));
+      };
+      document.body.appendChild(script);
+    });
+  }
+  return razorpayScript;
+}
+
 export const SHOP_WHATSAPP = '919884126032';
+
+export const STATES = [
+  'Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh',
+  'Chhattisgarh', 'Dadra and Nagar Haveli and Daman and Diu', 'Delhi', 'Goa', 'Gujarat', 'Haryana',
+  'Himachal Pradesh', 'Jammu and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Lakshadweep',
+  'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry',
+  'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand',
+  'West Bengal',
+];
+
+export async function lookupPincode(pincode) {
+  try {
+    const response = await fetch(`https://api.postalpincode.in/pincode/${pincode}`);
+    const [result] = await response.json();
+    const offices = result?.Status === 'Success' ? result.PostOffice || [] : [];
+    if (!offices.length) return null;
+    const state = STATES.find((item) => item.toLowerCase() === String(offices[0].State).toLowerCase()) || '';
+    return { city: offices[0].District, state, localities: [...new Set(offices.map((office) => office.Name))] };
+  } catch {
+    return null;
+  }
+}
+
+export function addressText(address) {
+  return [address.addressLine, address.locality, address.landmark, address.city, address.state]
+    .filter(Boolean)
+    .join(', ') + (address.pincode ? ` - ${address.pincode}` : '');
+}
 
 export function sourceLabel(channel) {
   if (channel === 'store') return 'Store';

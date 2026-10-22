@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import bcrypt from 'bcryptjs';
-import { categories, products } from './catalog.js';
+import { banners, CATALOG_VERSION, categories, products } from './catalog.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const imageRoot = path.resolve(__dirname, '../../reference/product-images');
@@ -11,6 +11,7 @@ function collectImages() {
   const map = new Map();
   if (!fs.existsSync(imageRoot)) return map;
   for (const folder of fs.readdirSync(imageRoot)) {
+    if (folder === 'uploads') continue;
     const dir = path.join(imageRoot, folder);
     if (!fs.statSync(dir).isDirectory()) continue;
     for (const file of fs.readdirSync(dir)) {
@@ -29,64 +30,98 @@ function collectImages() {
   return map;
 }
 
-export async function seedDatabase(pool) {
+async function dropVariants(client, variantIds) {
+  if (!variantIds.length) return;
+  await client.query('DELETE FROM inventory_moves WHERE variant_id = ANY($1::int[])', [variantIds]);
+  await client.query('DELETE FROM variants WHERE id = ANY($1::int[])', [variantIds]);
+}
+
+async function installCatalog(client) {
   const images = collectImages();
+
+  for (const category of categories) {
+    await client.query(
+      `INSERT INTO categories (slug, name, blurb, sort_order)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (slug) DO UPDATE
+       SET name = EXCLUDED.name, blurb = EXCLUDED.blurb, sort_order = EXCLUDED.sort_order`,
+      [category.slug, category.name, category.blurb, category.sortOrder],
+    );
+  }
+  const { rows: categoryRows } = await client.query('SELECT id, slug FROM categories');
+  const categoryId = new Map(categoryRows.map((row) => [row.slug, row.id]));
+
+  for (const [index, product] of products.entries()) {
+    const inserted = await client.query(
+      `INSERT INTO products (category_id, slug, name, description, image_urls, featured, active, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7)
+       ON CONFLICT (slug) DO UPDATE
+       SET category_id = EXCLUDED.category_id,
+           name = EXCLUDED.name,
+           description = EXCLUDED.description,
+           image_urls = EXCLUDED.image_urls,
+           featured = EXCLUDED.featured,
+           active = TRUE,
+           sort_order = EXCLUDED.sort_order
+       RETURNING id`,
+      [categoryId.get(product.category), product.slug, product.name, product.description, images.get(product.slug) || [], product.featured, index + 1],
+    );
+    const productId = inserted.rows[0].id;
+    for (const variant of product.variants) {
+      await client.query(
+        `INSERT INTO variants (product_id, label, weight_grams, price_paise, compare_paise)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (product_id, label) DO UPDATE
+         SET weight_grams = EXCLUDED.weight_grams,
+             price_paise = EXCLUDED.price_paise,
+             compare_paise = EXCLUDED.compare_paise`,
+        [productId, variant.label, variant.grams, variant.price, variant.compare],
+      );
+    }
+    const stale = await client.query(
+      'SELECT id FROM variants WHERE product_id = $1 AND NOT (label = ANY($2::text[]))',
+      [productId, product.variants.map((variant) => variant.label)],
+    );
+    await dropVariants(client, stale.rows.map((row) => row.id));
+  }
+
+  const keep = products.map((product) => product.slug);
+  const old = await client.query('SELECT id, slug FROM products WHERE NOT (slug = ANY($1::text[]))', [keep]);
+  if (old.rows.length) {
+    const ids = old.rows.map((row) => row.id);
+    const variants = await client.query('SELECT id FROM variants WHERE product_id = ANY($1::int[])', [ids]);
+    await dropVariants(client, variants.rows.map((row) => row.id));
+    await client.query('DELETE FROM favorites WHERE product_slug = ANY($1::text[])', [old.rows.map((row) => row.slug)]);
+    await client.query('DELETE FROM products WHERE id = ANY($1::int[])', [ids]);
+  }
+  await client.query(
+    'DELETE FROM categories WHERE NOT (slug = ANY($1::text[])) AND id NOT IN (SELECT category_id FROM products)',
+    [categories.map((category) => category.slug)],
+  );
+
+  await client.query('DELETE FROM banners');
+  for (const [index, banner] of banners.entries()) {
+    await client.query(
+      `INSERT INTO banners (title, subtitle, button_label, link_url, image_url, product_slug, variant_label, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [banner.title, banner.subtitle, banner.buttonLabel, banner.link, banner.image, banner.productSlug, banner.variantLabel, index + 1],
+    );
+  }
+
+  await client.query(
+    `INSERT INTO settings (key, value) VALUES ('catalog_version', $1)
+     ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+    [CATALOG_VERSION],
+  );
+  console.log(`Installed the product list: ${products.length} products, ${old.rows.length} old products removed.`);
+}
+
+export async function seedDatabase(pool) {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    for (const category of categories) {
-      await client.query(
-        `INSERT INTO categories (slug, name, blurb, sort_order)
-         VALUES ($1, $2, $3, $4)
-         ON CONFLICT (slug) DO UPDATE
-         SET name = EXCLUDED.name, blurb = EXCLUDED.blurb, sort_order = EXCLUDED.sort_order`,
-        [category.slug, category.name, category.blurb, category.sortOrder],
-      );
-    }
-
-    const { rows: categoryRows } = await client.query('SELECT id, slug FROM categories');
-    const categoryId = new Map(categoryRows.map((row) => [row.slug, row.id]));
-
-    for (const product of products) {
-      const scanned = images.get(product.slug) || [];
-      const current = await client.query('SELECT image_urls FROM products WHERE slug = $1', [product.slug]);
-      const root = path.resolve(imageRoot);
-      const kept = (current.rows[0]?.image_urls || []).filter((url) => {
-        if (scanned.includes(url) || !String(url).startsWith('/media/')) return false;
-        const relative = decodeURIComponent(String(url).slice('/media/'.length));
-        const file = path.resolve(imageRoot, relative);
-        const rootKey = `${root.toLowerCase()}${path.sep}`;
-        return file.toLowerCase().startsWith(rootKey) && fs.existsSync(file);
-      });
-      const urls = [...scanned, ...kept];
-      if (urls.length === 0) {
-        console.warn(`No images for ${product.slug}`);
-      }
-      const inserted = await client.query(
-        `INSERT INTO products (category_id, slug, name, description, image_urls, featured)
-         VALUES ($1, $2, $3, $4, $5, $6)
-         ON CONFLICT (slug) DO UPDATE
-         SET category_id = EXCLUDED.category_id,
-             name = EXCLUDED.name,
-             description = EXCLUDED.description,
-             image_urls = EXCLUDED.image_urls,
-             featured = EXCLUDED.featured
-         RETURNING id`,
-        [categoryId.get(product.category), product.slug, product.name, product.description, urls, product.featured],
-      );
-      const productId = inserted.rows[0].id;
-      for (const variant of product.variants) {
-        await client.query(
-          `INSERT INTO variants (product_id, label, weight_grams, price_paise, compare_paise)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (product_id, label) DO UPDATE
-           SET weight_grams = EXCLUDED.weight_grams,
-               price_paise = EXCLUDED.price_paise,
-               compare_paise = EXCLUDED.compare_paise`,
-          [productId, variant.label, variant.grams, variant.price, variant.compare],
-        );
-      }
-    }
+    const version = await client.query(`SELECT value FROM settings WHERE key = 'catalog_version'`);
+    if (version.rows[0]?.value !== CATALOG_VERSION) await installCatalog(client);
 
     const email = (process.env.ADMIN_EMAIL || 'admin@jagathaorganics.com').toLowerCase();
     const password = process.env.ADMIN_PASSWORD || 'Jagatha@2026';
@@ -127,7 +162,8 @@ export async function seedDatabase(pool) {
     }
 
     await client.query('COMMIT');
-    console.log(`Catalog ready. ${products.length} products.`);
+    const count = await client.query('SELECT COUNT(*)::int AS n FROM products WHERE active');
+    console.log(`Catalog ready. ${count.rows[0].n} products in the shop.`);
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

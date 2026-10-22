@@ -1,9 +1,16 @@
+import crypto from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { getPool } from './db.js';
+import { cleanPhone, mapAddress, readAddress } from './address.js';
+import { sendMail } from './mailer.js';
 
-function cleanPhone(value) {
-  return String(value || '').replace(/\D/g, '').replace(/^91(?=\d{10}$)/, '');
+const OTP_MINUTES = 10;
+const OTP_ATTEMPTS = 5;
+const OTP_RESEND_SECONDS = 30;
+
+function otpHash(email, code) {
+  return crypto.createHmac('sha256', process.env.JWT_SECRET).update(`${email}:${code}`).digest('hex');
 }
 
 function clip(value, max) {
@@ -37,7 +44,7 @@ function signCustomer(row) {
 }
 
 export function registerAccount(app) {
-  app.post('/api/account/register', async (req, res, next) => {
+  app.post('/api/account/register/start', async (req, res, next) => {
     try {
       const name = clip(req.body?.name, 80);
       const email = clip(req.body?.email, 120).toLowerCase();
@@ -47,13 +54,129 @@ export function registerAccount(app) {
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email.' });
       if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a 10-digit mobile number.' });
       if (password.length < 8) return res.status(400).json({ error: 'Use a password of at least 8 characters.' });
-      const inserted = await getPool().query(
-        `INSERT INTO customers (name, email, phone, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, name, email, phone`,
-        [name, email, phone, bcrypt.hashSync(password, 10)],
+
+      const taken = await getPool().query('SELECT 1 FROM customers WHERE email = $1', [email]);
+      if (taken.rows[0]) return res.status(409).json({ error: 'An account already uses that email. Sign in instead.' });
+      const recent = await getPool().query(
+        `SELECT 1 FROM otp_codes WHERE email = $1 AND sent_at > NOW() - make_interval(secs => $2)`,
+        [email, OTP_RESEND_SECONDS],
       );
+      if (recent.rows[0]) return res.status(429).json({ error: `Please wait ${OTP_RESEND_SECONDS} seconds before asking for a new code.` });
+
+      const code = String(crypto.randomInt(100000, 1000000));
+      await getPool().query(
+        `INSERT INTO otp_codes (email, code_hash, payload, attempts, expires_at, sent_at)
+         VALUES ($1, $2, $3, 0, NOW() + make_interval(mins => $4), NOW())
+         ON CONFLICT (email) DO UPDATE
+         SET code_hash = EXCLUDED.code_hash, payload = EXCLUDED.payload, attempts = 0,
+             expires_at = EXCLUDED.expires_at, sent_at = NOW()`,
+        [email, otpHash(email, code), { name, phone, passwordHash: bcrypt.hashSync(password, 10) }, OTP_MINUTES],
+      );
+      const mail = await sendMail({
+        to: email,
+        subject: `${code} is your Jagatha Organics code`,
+        text: `Hello ${name},\n\nYour Jagatha Organics verification code is ${code}. It works for ${OTP_MINUTES} minutes.\n\nIf you did not ask for it, ignore this email.`,
+        html: `<p>Hello ${name.replace(/[<>&]/g, '')},</p><p>Your Jagatha Organics verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It works for ${OTP_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
+      });
+      res.json({ sent: true, email, delivered: mail.delivered });
+    } catch (error) {
+      if (error.status === 503) return res.status(503).json({ error: error.message });
+      next(error);
+    }
+  });
+
+  app.post('/api/account/register/verify', async (req, res, next) => {
+    const client = await getPool().connect();
+    try {
+      const email = clip(req.body?.email, 120).toLowerCase();
+      const code = String(req.body?.code || '').replace(/\D/g, '');
+      await client.query('BEGIN');
+      const { rows } = await client.query('SELECT * FROM otp_codes WHERE email = $1 FOR UPDATE', [email]);
+      const row = rows[0];
+      if (!row || new Date(row.expires_at) < new Date()) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'That code has expired. Ask for a new one.' });
+      }
+      if (row.attempts >= OTP_ATTEMPTS) {
+        await client.query('ROLLBACK');
+        return res.status(429).json({ error: 'Too many tries. Ask for a new code.' });
+      }
+      const expected = Buffer.from(row.code_hash);
+      const given = Buffer.from(otpHash(email, code));
+      if (code.length !== 6 || !crypto.timingSafeEqual(expected, given)) {
+        await client.query('UPDATE otp_codes SET attempts = attempts + 1 WHERE email = $1', [email]);
+        await client.query('COMMIT');
+        return res.status(400).json({ error: 'That code is not right. Check the email and try again.' });
+      }
+      const { name, phone, passwordHash } = row.payload;
+      const inserted = await client.query(
+        `INSERT INTO customers (name, email, phone, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, name, email, phone`,
+        [name, email, phone, passwordHash],
+      );
+      await client.query('DELETE FROM otp_codes WHERE email = $1', [email]);
+      await client.query('COMMIT');
       res.status(201).json(signCustomer(inserted.rows[0]));
     } catch (error) {
-      if (error.code === '23505') return res.status(409).json({ error: 'An account already uses that email.' });
+      try { await client.query('ROLLBACK'); } catch { /* ignore */ }
+      if (error.code === '23505') return res.status(409).json({ error: 'An account already uses that email. Sign in instead.' });
+      next(error);
+    } finally {
+      client.release();
+    }
+  });
+
+  app.get('/api/account/addresses', requireCustomer, async (req, res, next) => {
+    try {
+      const { rows } = await getPool().query(
+        'SELECT * FROM customer_addresses WHERE customer_id = $1 ORDER BY used_at DESC, id DESC',
+        [req.customer.id],
+      );
+      res.json(rows.map(mapAddress));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  app.post('/api/account/addresses', requireCustomer, async (req, res, next) => {
+    try {
+      const a = readAddress(req.body);
+      const count = await getPool().query('SELECT COUNT(*)::int AS n FROM customer_addresses WHERE customer_id = $1', [req.customer.id]);
+      if (count.rows[0].n >= 10) return res.status(400).json({ error: 'You can keep up to 10 addresses. Remove one first.' });
+      const { rows } = await getPool().query(
+        `INSERT INTO customer_addresses (customer_id, name, phone, pincode, locality, address_line, city, state, landmark, alt_phone, address_type)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *`,
+        [req.customer.id, a.name, a.phone, a.pincode, a.locality, a.addressLine, a.city, a.state, a.landmark, a.altPhone, a.addressType],
+      );
+      res.status(201).json(mapAddress(rows[0]));
+    } catch (error) {
+      if (error.status === 400) return res.status(400).json({ error: error.message });
+      next(error);
+    }
+  });
+
+  app.patch('/api/account/addresses/:id', requireCustomer, async (req, res, next) => {
+    try {
+      const a = readAddress(req.body);
+      const { rows } = await getPool().query(
+        `UPDATE customer_addresses
+         SET name = $3, phone = $4, pincode = $5, locality = $6, address_line = $7, city = $8, state = $9,
+             landmark = $10, alt_phone = $11, address_type = $12
+         WHERE id = $1 AND customer_id = $2 RETURNING *`,
+        [Number(req.params.id), req.customer.id, a.name, a.phone, a.pincode, a.locality, a.addressLine, a.city, a.state, a.landmark, a.altPhone, a.addressType],
+      );
+      if (!rows[0]) return res.status(404).json({ error: 'Address not found.' });
+      res.json(mapAddress(rows[0]));
+    } catch (error) {
+      if (error.status === 400) return res.status(400).json({ error: error.message });
+      next(error);
+    }
+  });
+
+  app.delete('/api/account/addresses/:id', requireCustomer, async (req, res, next) => {
+    try {
+      await getPool().query('DELETE FROM customer_addresses WHERE id = $1 AND customer_id = $2', [Number(req.params.id), req.customer.id]);
+      res.json({ ok: true });
+    } catch (error) {
       next(error);
     }
   });
@@ -76,8 +199,8 @@ export function registerAccount(app) {
   app.get('/api/account/orders', requireCustomer, async (req, res, next) => {
     try {
       const { rows } = await getPool().query(
-        `SELECT o.order_number, o.status, o.total_paise, o.channel, o.payment_method, o.created_at,
-           o.courier_name, o.tracking_number, o.tracking_url,
+        `SELECT o.order_number, o.status, o.total_paise, o.channel, o.payment_method, o.payment_status, o.created_at,
+           o.phone, o.courier_name, o.tracking_number, o.tracking_url,
            COALESCE(
              (
                SELECT json_agg(json_build_object(
@@ -104,6 +227,8 @@ export function registerAccount(app) {
         totalPaise: row.total_paise,
         channel: row.channel,
         paymentMethod: row.payment_method,
+        paymentStatus: row.payment_status || '',
+        phone: row.phone,
         createdAt: row.created_at,
         courierName: row.courier_name || '',
         trackingNumber: row.tracking_number || '',
