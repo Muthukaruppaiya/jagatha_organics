@@ -201,10 +201,23 @@ function createApp() {
   app.use(helmet({
     contentSecurityPolicy: false,
     crossOriginEmbedderPolicy: false,
-    hsts: process.env.NODE_ENV === 'production' ? undefined : false,
+    hsts: false,
   }));
+  const allowedOrigins = new Set(
+    [
+      process.env.PUBLIC_ORIGIN,
+      'http://103.94.27.120',
+      'http://jagathaorganics.com',
+      'https://jagathaorganics.com',
+      'http://www.jagathaorganics.com',
+      'https://www.jagathaorganics.com',
+    ].flatMap((value) => String(value || '').split(',').map((item) => item.trim()).filter(Boolean)),
+  );
   app.use(cors({
-    origin: process.env.PUBLIC_ORIGIN || true,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.has(origin)) return callback(null, true);
+      return callback(null, false);
+    },
     credentials: true,
   }));
   app.use(cookieParser());
@@ -685,7 +698,7 @@ function createApp() {
   }
 
   app.use((error, _req, res, _next) => {
-    if (error.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'That file is too large. Photos are 8 MB and videos are 40 MB.' });
+    if (error.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'That file is too large. Photos are 8 MB and videos are 25 MB.' });
     if (error.type === 'entity.too.large') return res.status(413).json({ error: 'That request is too large.' });
     if (error.status && error.status < 500) return res.status(error.status).json({ error: error.message });
     console.error(error);

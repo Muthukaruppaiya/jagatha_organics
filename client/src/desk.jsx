@@ -821,6 +821,10 @@ export function AdminVideos() {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
+    if (file.size > 25 * 1024 * 1024) {
+      setError('That file is too large. Videos can be up to 25 MB.');
+      return;
+    }
     setBusy(true);
     setError('');
     try {
@@ -849,7 +853,7 @@ export function AdminVideos() {
 
   if (blocked) return blocked;
   return (
-    <AdminShell eyebrow="Homepage" title="Videos" lead="These clips play on the home page. Upload an MP4, up to 40 MB, and it replaces the fixed set.">
+    <AdminShell eyebrow="Homepage" title="Videos" lead="These clips play on the home page and in the floating video. Upload an MP4, up to 25 MB.">
       <div className="drop-zone video-add">
         <label>Caption<input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Millet laddus" /></label>
         <label className="btn file-btn">

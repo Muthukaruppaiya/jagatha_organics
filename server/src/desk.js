@@ -221,7 +221,7 @@ const videoUpload = multer({
       callback(null, `${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
     },
   }),
-  limits: { fileSize: 40 * 1024 * 1024 },
+  limits: { fileSize: 25 * 1024 * 1024 },
   fileFilter: (_req, file, callback) => {
     if (file.mimetype !== 'video/mp4') {
       const error = new Error('Upload an MP4 video.');

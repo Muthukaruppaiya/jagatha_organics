@@ -47,6 +47,50 @@ function ReelCard({ reel }) {
   );
 }
 
+export function FloatingVideo() {
+  const [clip, setClip] = useState(null);
+  const [open, setOpen] = useState(false);
+  const [hidden, setHidden] = useState(() => sessionStorage.getItem('jagatha-hide-float-video') === '1');
+
+  useEffect(() => {
+    api.videos()
+      .then((list) => {
+        if (Array.isArray(list) && list[0]?.src) {
+          setClip(list[0]);
+          return;
+        }
+        setClip({ src: '/reels/reel-2.mp4', title: 'Jagatha Organics' });
+      })
+      .catch(() => setClip({ src: '/reels/reel-2.mp4', title: 'Jagatha Organics' }));
+  }, []);
+
+  if (hidden || !clip) return null;
+
+  return (
+    <div className={open ? 'video-float open' : 'video-float'}>
+      <button
+        type="button"
+        className="video-float-close"
+        aria-label="Hide video"
+        onClick={() => {
+          sessionStorage.setItem('jagatha-hide-float-video', '1');
+          setHidden(true);
+        }}
+      >
+        ×
+      </button>
+      <button
+        type="button"
+        className="video-float-card"
+        aria-label={open ? 'Shrink video' : 'Watch video'}
+        onClick={() => setOpen((value) => !value)}
+      >
+        <video src={clip.src} muted loop playsInline autoPlay preload="metadata" />
+      </button>
+    </div>
+  );
+}
+
 export function ReelStrip() {
   const [reels, setReels] = useState(FALLBACK);
 
