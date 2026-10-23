@@ -226,7 +226,7 @@ export function Checkout() {
   const [otpPhone, setOtpPhone] = useState(() => readCustomer()?.phone || '');
   const [otpName, setOtpName] = useState(() => readCustomer()?.name || '');
   const [otpCode, setOtpCode] = useState('');
-  const [otpShown, setOtpShown] = useState('');
+  const [otpEmail, setOtpEmail] = useState(() => accountEmail(readCustomer()));
   const [otpSent, setOtpSent] = useState(null);
   const [otpWait, setOtpWait] = useState(0);
 
@@ -246,6 +246,7 @@ export function Checkout() {
         setEmail(accountEmail(me));
         setOtpPhone(me.phone || '');
         setOtpName(me.name || '');
+        setOtpEmail(accountEmail(me));
         setStep('address');
       })
       .catch(() => {});
@@ -283,6 +284,7 @@ export function Checkout() {
     saveCustomer(result);
     setAccount(result.customer);
     setEmail(accountEmail(result.customer));
+    setOtpEmail(accountEmail(result.customer));
     setAddresses(result.addresses || []);
     setSelectedId(result.addresses?.[0]?.id || null);
     setAccountKind(result.exists ? (result.addresses?.length ? 'returning' : 'existing') : 'new');
@@ -299,7 +301,6 @@ export function Checkout() {
     setEditing('new');
     setAccountKind('');
     setOtpSent(null);
-    setOtpShown('');
     setOtpCode('');
     setOtpWait(0);
     setStep('mobile');
@@ -309,10 +310,9 @@ export function Checkout() {
     setBusy(true);
     setError('');
     try {
-      const sent = await api.startCheckoutOtp({ phone: otpPhone, name: otpName });
+      const sent = await api.startCheckoutOtp({ phone: otpPhone, name: otpName, email: otpEmail });
       setOtpSent(sent);
-      setOtpShown(sent.code || '');
-      setOtpCode(sent.code || '');
+      setOtpCode('');
       setOtpName(sent.name || otpName);
       setOtpWait(30);
     } catch (err) {
@@ -416,16 +416,10 @@ export function Checkout() {
             <form className="otp-panel" onSubmit={verifyCheckoutCode}>
               <p>
                 {otpSent.exists
-                  ? <>Welcome back{otpSent.name ? `, ${otpSent.name}` : ''}. Enter the code for <b>+91 {otpSent.phone}</b> to load your saved address.</>
-                  : <>No account uses <b>+91 {otpSent.phone}</b> yet. Enter the code to create one, then add your address.</>}
+                  ? <>Welcome back{otpSent.name ? `, ${otpSent.name}` : ''}. Enter the code we emailed to <b>{otpSent.sentTo}</b>.</>
+                  : <>No account uses <b>+91 {otpSent.phone}</b> yet. Enter the code we emailed to <b>{otpSent.sentTo}</b> to create one.</>}
               </p>
-              {otpShown && (
-                <div className="otp-show">
-                  <small>Your verification code</small>
-                  <b>{otpShown}</b>
-                  <small>Shown on screen because SMS is not connected yet.</small>
-                </div>
-              )}
+              <p className="note">Check your inbox and spam folder. After WhatsApp is connected, we can send the same code there too.</p>
               <input
                 className="otp-input"
                 value={otpCode}
@@ -445,14 +439,14 @@ export function Checkout() {
                 <button className="text-btn" type="button" onClick={sendCheckoutCode} disabled={busy || otpWait > 0}>
                   {otpWait > 0 ? `Resend code in ${otpWait}s` : 'Resend code'}
                 </button>
-                <button className="text-btn" type="button" onClick={() => { setOtpSent(null); setOtpShown(''); setOtpCode(''); setError(''); }}>
+                <button className="text-btn" type="button" onClick={() => { setOtpSent(null); setOtpCode(''); setError(''); }}>
                   Change number
                 </button>
               </div>
             </form>
           ) : (
             <form className="otp-panel" onSubmit={(event) => { event.preventDefault(); sendCheckoutCode(); }}>
-              <p>Enter your 10-digit mobile number. If it is already on file we will load that account. If not, we will create one.</p>
+              <p>Enter your mobile number and email. We send the verification code by email. If this number is already on file we will load that account.</p>
               <div className="field-grid">
                 <label className="field">
                   <input
@@ -478,10 +472,21 @@ export function Checkout() {
                   />
                   <span>10-digit mobile number</span>
                 </label>
+                <label className="field wide">
+                  <input
+                    type="email"
+                    value={otpEmail}
+                    onChange={(event) => setOtpEmail(event.target.value)}
+                    placeholder=" "
+                    autoComplete="email"
+                    required
+                  />
+                  <span>Email for the verification code</span>
+                </label>
               </div>
               {error && <p className="status error">{error}</p>}
               <div className="step-actions">
-                <button className="btn step-cta" type="submit" disabled={busy || otpPhone.length !== 10 || otpName.trim().length < 2}>
+                <button className="btn step-cta" type="submit" disabled={busy || otpPhone.length !== 10 || otpName.trim().length < 2 || !otpEmail.includes('@')}>
                   {busy ? 'Sending…' : 'Send verification code'}
                 </button>
               </div>
@@ -857,7 +862,7 @@ export function Track() {
   const [busy, setBusy] = useState(false);
   const [otpPhone, setOtpPhone] = useState(() => readCustomer()?.phone || '');
   const [otpCode, setOtpCode] = useState('');
-  const [otpShown, setOtpShown] = useState('');
+  const [otpEmail, setOtpEmail] = useState(() => accountEmail(readCustomer()));
   const [otpSent, setOtpSent] = useState(null);
   const [otpWait, setOtpWait] = useState(0);
 
@@ -905,10 +910,9 @@ export function Track() {
     setBusy(true);
     setError('');
     try {
-      const sent = await api.startCheckoutOtp({ phone: otpPhone, lookup: true });
+      const sent = await api.startCheckoutOtp({ phone: otpPhone, email: otpEmail, lookup: true });
       setOtpSent(sent);
-      setOtpShown(sent.code || '');
-      setOtpCode(sent.code || '');
+      setOtpCode('');
       setOtpWait(30);
     } catch (err) {
       setError(err.message);
@@ -926,7 +930,6 @@ export function Track() {
       saveCustomer(result);
       setAccount(result.customer);
       setOtpSent(null);
-      setOtpShown('');
       setOtpCode('');
     } catch (err) {
       setError(err.message);
@@ -945,14 +948,8 @@ export function Track() {
       {!account ? (
         otpSent ? (
           <form className="otp-panel glass" onSubmit={verifyCode}>
-            <p>Enter the code for <b>+91 {otpSent.phone}</b> to see your orders.</p>
-            {otpShown && (
-              <div className="otp-show">
-                <small>Your verification code</small>
-                <b>{otpShown}</b>
-                <small>Shown on screen because SMS is not connected yet.</small>
-              </div>
-            )}
+            <p>Enter the code we emailed to <b>{otpSent.sentTo}</b> to see your orders.</p>
+            <p className="note">Check your inbox and spam folder. After WhatsApp is connected, we can send the same code there too.</p>
             <input
               className="otp-input"
               value={otpCode}
@@ -970,12 +967,12 @@ export function Track() {
               <button className="text-btn" type="button" onClick={sendCode} disabled={busy || otpWait > 0}>
                 {otpWait > 0 ? `Resend code in ${otpWait}s` : 'Resend code'}
               </button>
-              <button className="text-btn" type="button" onClick={() => { setOtpSent(null); setOtpShown(''); setOtpCode(''); setError(''); }}>Change number</button>
+              <button className="text-btn" type="button" onClick={() => { setOtpSent(null); setOtpCode(''); setError(''); }}>Change number</button>
             </div>
           </form>
         ) : (
           <form className="otp-panel glass" onSubmit={sendCode}>
-            <p>Sign in with your mobile number. Your ordered products will show here.</p>
+            <p>Sign in with your mobile number. We email the verification code. Your ordered products will show here.</p>
             <label className="field">
               <input
                 value={otpPhone}
@@ -989,6 +986,16 @@ export function Track() {
                 required
               />
               <span>10-digit mobile number</span>
+            </label>
+            <label className="field">
+              <input
+                type="email"
+                value={otpEmail}
+                onChange={(event) => setOtpEmail(event.target.value)}
+                placeholder=" "
+                autoComplete="email"
+              />
+              <span>Email if it is not already on your account</span>
             </label>
             {error && <p className="status error">{error}</p>}
             <button className="btn" type="submit" disabled={busy || otpPhone.length !== 10}>{busy ? 'Checking…' : 'Continue'}</button>

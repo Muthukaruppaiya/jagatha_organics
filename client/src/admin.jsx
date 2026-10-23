@@ -85,6 +85,7 @@ const ICONS = {
   videos: 'M5 6h10v12H5zM15 10l5-2v8l-5-2z',
   banners: 'M3 6h18v12H3zM7 10h6M7 14h4',
   products: 'M4 7l8-4 8 4v10l-8 4-8-4zM4 7l8 4 8-4M12 11v10',
+  prices: 'M12 3v18M8 8h7a3 3 0 0 1 0 6H9a3 3 0 0 0 0 6h8',
   reviews: 'M6 5h12v10H9l-3 3z',
 };
 
@@ -92,6 +93,7 @@ const LINKS = [
   { to: '/admin', label: 'Orders', icon: 'orders', end: true, roles: ['admin', 'billing', 'delivery'] },
   // { to: '/admin/billing', label: 'Store billing', icon: 'billing', roles: ['admin', 'billing'] },
   { to: '/admin/products', label: 'Products', icon: 'products', roles: ['admin'] },
+  { to: '/admin/prices', label: 'Prices', icon: 'prices', roles: ['admin'] },
   { to: '/admin/inventory', label: 'Stock', icon: 'inventory', roles: ['admin', 'billing'] },
   { to: '/admin/images', label: 'Images', icon: 'images', roles: ['admin'] },
   { to: '/admin/banners', label: 'Banners', icon: 'banners', roles: ['admin'] },
@@ -329,7 +331,7 @@ export function AdminOrder() {
     try {
       const body = { status };
       if (!delivery) body.adminNote = note;
-      if (canCourier) {
+      if (canCourier && status === 'shipped') {
         body.courierName = courierName;
         body.trackingNumber = trackingNumber;
         body.trackingUrl = trackingUrl;
@@ -376,6 +378,8 @@ export function AdminOrder() {
   const email = shopEmail(order.email);
   const goodsPaise = order.items.reduce((sum, item) => sum + item.unitPricePaise * item.quantity, 0);
   const trackUrl = /^https?:\/\//i.test(order.trackingUrl || '') ? order.trackingUrl : '';
+  const askCourier = canCourier && status === 'shipped';
+  const hasCourier = Boolean(order.courierName || order.trackingNumber || trackUrl);
   const waHref = order.phone
     ? whatsAppLink(order.phone, `Hello ${order.customerName}, this is Jagatha Organics about order ${order.orderNumber}.`)
     : '';
@@ -491,11 +495,12 @@ export function AdminOrder() {
             </label>
           )}
 
-          {canCourier ? (
+          {askCourier ? (
             <div className="courier-card">
               <div>
-                <b>Courier tracking</b>
-                <p className="muted">The customer sees this after they tap the product on Track order.</p>
+                <b>Courier details</b>
+                <span className="opt-pill">Optional</span>
+                <p className="muted">Add these if you have them. You can mark the order shipped without a courier name, tracking number, or link.</p>
               </div>
               <div className="courier-fields">
                 <label>Courier name
@@ -509,16 +514,17 @@ export function AdminOrder() {
                 </label>
               </div>
             </div>
-          ) : (order.courierName || order.trackingNumber || trackUrl) ? (
-            <div className="courier-card">
-              <b>Courier tracking</b>
-              <p>{order.courierName || '—'} · {order.trackingNumber || 'No tracking number yet'}</p>
+          ) : hasCourier ? (
+            <div className="courier-card read">
+              <b>Courier details</b>
+              <p>{[order.courierName, order.trackingNumber].filter(Boolean).join(' · ') || 'Saved on this order'}</p>
               {trackUrl && <a href={trackUrl} target="_blank" rel="noreferrer">Open tracking link</a>}
+              <p className="muted">Change the status to Shipped if you need to edit these.</p>
             </div>
           ) : null}
 
           {error && <p className="status error">{error}</p>}
-          {saved && <p className="note">Saved. The customer can see this on Track order.</p>}
+          {saved && <p className="note">Saved. The customer can open this order from their account to see the details.</p>}
           <button className="btn" disabled={busy} type="submit">{busy ? 'Saving…' : 'Update order'}</button>
         </form>
       </div>

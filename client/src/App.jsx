@@ -7,7 +7,7 @@ import { PayCancelled, PayExpired, PayFailed, PayWaiting } from './payment.jsx';
 import { AccountHome, AccountLogin } from './account.jsx';
 import { AdminHome, AdminLogin, AdminOrder } from './admin.jsx';
 import { AdminBanners, AdminImages, AdminInventory, AdminReports, AdminReviews, AdminStaff, AdminVideos } from './desk.jsx';
-import { AdminProducts } from './products-desk.jsx';
+import { AdminPrices, AdminProducts } from './products-desk.jsx';
 import { AdminSettings } from './settings-desk.jsx';
 
 export default function App() {
@@ -40,6 +40,7 @@ export default function App() {
           <Route path="admin/billing" element={<AdminBilling />} />
           */}
           <Route path="admin/products" element={<AdminProducts />} />
+          <Route path="admin/prices" element={<AdminPrices />} />
           <Route path="admin/inventory" element={<AdminInventory />} />
           <Route path="admin/images" element={<AdminImages />} />
           <Route path="admin/banners" element={<AdminBanners />} />

@@ -280,6 +280,7 @@ export function AdminProducts() {
           {categories.map((category) => <option key={category.slug} value={category.slug}>{category.name}</option>)}
         </select>
         <button className="btn ghost tiny" type="button" onClick={() => setShowCategories((value) => !value)}>Categories</button>
+        <Link className="btn ghost tiny" to="/admin/prices">Update prices</Link>
         <button className="btn tiny" type="button" onClick={() => setEditing('new')} disabled={!categories.length}>New product</button>
       </div>
       <p className="muted banner-count">{shown} of {products.length} products showing in the shop.</p>
@@ -331,6 +332,182 @@ export function AdminProducts() {
             )))}
           </section>
         ))}
+      </div>
+    </AdminShell>
+  );
+}
+
+function priceDraft(list) {
+  const next = {};
+  for (const product of list || []) {
+    for (const variant of product.variants || []) {
+      next[variant.id] = {
+        price: rupees(variant.pricePaise),
+        compare: variant.comparePaise > variant.pricePaise ? rupees(variant.comparePaise) : '',
+      };
+    }
+  }
+  return next;
+}
+
+function lightestPack(product) {
+  return [...(product?.variants || [])].sort((a, b) => (a.grams || 0) - (b.grams || 0))[0];
+}
+
+export function AdminPrices() {
+  const person = readStaff();
+  const [products, setProducts] = useState([]);
+  const [draft, setDraft] = useState({});
+  const [slug, setSlug] = useState('');
+  const [query, setQuery] = useState('');
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.deskProducts()
+      .then((list) => {
+        setProducts(list);
+        setDraft(priceDraft(list));
+      })
+      .catch((err) => setError(err.message));
+  }, []);
+
+  if (!person) return <Navigate to="/admin/login" replace />;
+  if (person.role !== 'admin') return <Navigate to="/admin" replace />;
+
+  const hay = query.trim().toLowerCase();
+  const groups = useMemo(() => {
+    const map = new Map();
+    for (const product of products) {
+      if (hay && !`${product.name} ${product.category.name}`.toLowerCase().includes(hay)) continue;
+      const key = product.category.name;
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(product);
+    }
+    return [...map.entries()];
+  }, [products, hay]);
+
+  const product = products.find((item) => item.slug === slug);
+  const packs = product ? [...product.variants].sort((a, b) => (a.grams || 0) - (b.grams || 0)) : [];
+  const shopPack = lightestPack(product);
+  const updates = [];
+  for (const variant of packs) {
+    const row = draft[variant.id];
+    if (!row) continue;
+    const pricePaise = paise(row.price);
+    const comparePaise = paise(row.compare);
+    if (pricePaise !== variant.pricePaise || comparePaise !== (variant.comparePaise > variant.pricePaise ? variant.comparePaise : 0)) {
+      updates.push({ id: variant.id, pricePaise, comparePaise });
+    }
+  }
+
+  function pick(next) {
+    setSlug(next.slug);
+    setSaved('');
+    setError('');
+  }
+
+  function setPrice(id, key, value) {
+    setDraft((current) => ({ ...current, [id]: { ...current[id], [key]: value } }));
+    setSaved('');
+  }
+
+  async function save(event) {
+    event.preventDefault();
+    if (!updates.length) return;
+    setBusy(true);
+    setError('');
+    setSaved('');
+    try {
+      const list = await api.savePrices(updates);
+      setProducts(list);
+      const savedProduct = list.find((item) => item.slug === product.slug);
+      setDraft((current) => ({ ...current, ...priceDraft(savedProduct ? [savedProduct] : []) }));
+      setSaved(`Saved ${updates.length} pack price${updates.length === 1 ? '' : 's'} for ${product.name}.`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AdminShell
+      eyebrow="Catalogue"
+      title="Set prices"
+      lead="Select a product first, then set selling price and MRP for each pack. Shop cards keep the smallest pack price. The product page still lists the larger pack first."
+    >
+      <div className="price-desk">
+        <aside className="price-pick">
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Find a product" aria-label="Find a product" />
+          {groups.map(([category, items]) => (
+            <section key={category}>
+              <h2>{category}</h2>
+              {items.map((item) => {
+                const from = lightestPack(item);
+                return (
+                  <button
+                    key={item.slug}
+                    type="button"
+                    className={item.slug === slug ? 'on' : ''}
+                    onClick={() => pick(item)}
+                  >
+                    {item.images[0] ? <img src={item.images[0]} alt="" /> : <span className="no-photo">No photo</span>}
+                    <span>
+                      <b>{item.name}</b>
+                      <small>{from ? `${from.label} · ${inr(from.pricePaise)}` : 'No packs'}</small>
+                    </span>
+                  </button>
+                );
+              })}
+            </section>
+          ))}
+          {groups.length === 0 && <p className="muted">No products match that search.</p>}
+        </aside>
+        <form className="price-edit" onSubmit={save}>
+          {!product && <p className="price-empty">Select a product, then set the pack prices.</p>}
+          {product && (
+            <>
+              <header>
+                {product.images[0] ? <img src={product.images[0]} alt="" /> : <span className="no-photo">No photo</span>}
+                <div>
+                  <p className="eyebrow">{product.category.name}</p>
+                  <h2>{product.name}</h2>
+                  {shopPack && <small>Shop card shows {shopPack.label} at {inr(shopPack.pricePaise)}</small>}
+                </div>
+              </header>
+              {packs.map((variant) => (
+                <fieldset key={variant.id} className="price-pack">
+                  <legend>{variant.label}</legend>
+                  <label>
+                    Selling ₹
+                    <input
+                      inputMode="decimal"
+                      value={draft[variant.id]?.price || ''}
+                      onChange={(event) => setPrice(variant.id, 'price', event.target.value)}
+                      required
+                    />
+                  </label>
+                  <label>
+                    MRP ₹
+                    <input
+                      inputMode="decimal"
+                      value={draft[variant.id]?.compare || ''}
+                      onChange={(event) => setPrice(variant.id, 'compare', event.target.value)}
+                      placeholder="Optional"
+                    />
+                  </label>
+                </fieldset>
+              ))}
+              {error && <p className="status error">{error}</p>}
+              {saved && <p className="note">{saved}</p>}
+              <button className="btn" type="submit" disabled={busy || !updates.length}>
+                {busy ? 'Saving…' : updates.length ? `Save ${updates.length} pack price${updates.length === 1 ? '' : 's'}` : 'No changes'}
+              </button>
+            </>
+          )}
+        </form>
       </div>
     </AdminShell>
   );

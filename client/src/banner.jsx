@@ -4,40 +4,19 @@ import { api, inr } from './api.js';
 
 const SLIDE_MS = 5000;
 
-function BannerArt({ src }) {
+function BannerArt({ src, mobileSrc, alt = '' }) {
   return (
-    <>
-      <img className="banner-fill" src={src} alt="" aria-hidden="true" />
-      <img className="banner-shot" src={src} alt="" />
-    </>
+    <picture>
+      {mobileSrc ? <source media="(max-width: 760px)" srcSet={mobileSrc} /> : null}
+      <img className="banner-shot" src={src} alt={alt} />
+    </picture>
   );
 }
 
 function BannerButton({ banner }) {
   if (!banner.link || !banner.buttonLabel) return null;
-  if (banner.link.startsWith('/')) return <Link className="btn banner-cta" to={banner.link}>{banner.buttonLabel}</Link>;
-  return <a className="btn banner-cta" href={banner.link} target="_blank" rel="noreferrer">{banner.buttonLabel}</a>;
-}
-
-function ComboOffer({ banner, onOrder }) {
-  const { product } = banner;
-  const soldOut = product.stockQty === 0;
-  const off = product.comparePaise > product.pricePaise
-    ? Math.round((1 - product.pricePaise / product.comparePaise) * 100)
-    : 0;
-  return (
-    <>
-      <div className="banner-price">
-        <strong>{inr(product.pricePaise)}</strong>
-        {off > 0 && <s>{inr(product.comparePaise)}</s>}
-        {off > 0 && <span>{off}% off</span>}
-      </div>
-      <p className="banner-pack">{product.label}{soldOut ? ' · sold out' : ''}</p>
-      <button className="btn banner-cta" type="button" onClick={onOrder}>
-        {banner.buttonLabel || 'Order now'}
-      </button>
-    </>
-  );
+  if (banner.link.startsWith('/')) return <Link className="btn banner-cta banner-float" to={banner.link}>{banner.buttonLabel}</Link>;
+  return <a className="btn banner-cta banner-float" href={banner.link} target="_blank" rel="noreferrer">{banner.buttonLabel}</a>;
 }
 
 export function HeroBanner() {
@@ -84,8 +63,7 @@ export function HeroBanner() {
     >
       {banners.map((banner, position) => {
         const combo = Boolean(banner.product);
-        const bare = !banner.title && !banner.subtitle;
-        const classes = ['banner-slide', position === current && 'on', bare && 'bare', combo && 'combo'].filter(Boolean).join(' ');
+        const classes = ['banner-slide', position === current && 'on', combo && 'combo'].filter(Boolean).join(' ');
         return (
           <article
             key={banner.id}
@@ -95,29 +73,21 @@ export function HeroBanner() {
             aria-label={`${position + 1} of ${banners.length}`}
             onClick={combo ? (event) => { if (!event.target.closest('button, a')) order(banner); } : undefined}
           >
-            {!bare && (
-              <div className="banner-copy">
-                <p className="banner-kicker">{combo ? "This month's combo" : 'Jagatha Organics'}</p>
-                {banner.title && <h2>{banner.title}</h2>}
-                {banner.subtitle && <p className="banner-sub">{banner.subtitle}</p>}
-                {combo
-                  ? <ComboOffer banner={banner} onOrder={() => order(banner)} />
-                  : <div className="banner-buttons"><BannerButton banner={banner} /></div>}
-              </div>
-            )}
-            <div className="banner-media">
-              {bare && !combo && banner.link
+            <div className={banner.mobileImage ? 'banner-media phone' : 'banner-media'}>
+              { !combo && banner.link
                 ? (
-                  <Link to={banner.link.startsWith('/') ? banner.link : '/shop'} aria-label={banner.buttonLabel || 'Open offer'}>
-                    <BannerArt src={banner.image} />
+                  <Link to={banner.link.startsWith('/') ? banner.link : '/shop'} aria-label={banner.buttonLabel || banner.title || 'Open offer'}>
+                    <BannerArt src={banner.image} mobileSrc={banner.mobileImage} alt={banner.title || ''} />
                   </Link>
                 )
-                : <BannerArt src={banner.image} />}
-              {bare && combo && (
+                : <BannerArt src={banner.image} mobileSrc={banner.mobileImage} alt={banner.title || ''} />}
+              {combo && (
                 <button className="btn banner-cta banner-float" type="button" onClick={() => order(banner)}>
-                  {banner.buttonLabel || 'Order now'} · {inr(banner.product.pricePaise)}
+                  {banner.buttonLabel || 'Order now'}
+                  {banner.product?.pricePaise ? ` · ${inr(banner.product.pricePaise)}` : ''}
                 </button>
               )}
+              {!combo && <BannerButton banner={banner} />}
             </div>
           </article>
         );

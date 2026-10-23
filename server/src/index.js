@@ -52,8 +52,9 @@ const variantSelect = `
 
 function mapProduct(row) {
   const variants = row.variants || [];
-  const from = variants.reduce((min, variant) => Math.min(min, variant.pricePaise), variants[0]?.pricePaise || 0);
-  const compare = variants.find((variant) => variant.pricePaise === from)?.comparePaise || from;
+  const lightest = [...variants].sort((a, b) => (a.weightGrams || 0) - (b.weightGrams || 0))[0];
+  const from = lightest?.pricePaise || 0;
+  const compare = lightest?.comparePaise || from;
   return {
     id: row.id,
     slug: row.slug,
@@ -63,6 +64,7 @@ function mapProduct(row) {
     images: row.image_urls?.length ? row.image_urls : [PLACEHOLDER],
     category: { slug: row.category_slug, name: row.category_name },
     variants,
+    fromLabel: lightest?.label || '',
     fromPricePaise: from,
     fromComparePaise: compare,
   };
@@ -645,7 +647,7 @@ function createApp() {
   app.get('/api/banners', async (_req, res, next) => {
     try {
       const { rows } = await getPool().query(
-        `SELECT b.id, b.title, b.subtitle, b.button_label, b.link_url, b.image_url,
+        `SELECT b.id, b.title, b.subtitle, b.button_label, b.link_url, b.image_url, b.mobile_image_url,
                 p.slug AS product_slug, p.name AS product_name, p.image_urls[1] AS product_image,
                 v.id AS variant_id, v.label AS variant_label, v.price_paise, v.compare_paise, v.stock_qty
          FROM banners b
@@ -666,6 +668,7 @@ function createApp() {
         buttonLabel: row.button_label,
         link: row.link_url,
         image: row.image_url,
+        mobileImage: row.mobile_image_url || '',
         product: row.variant_id
           ? {
             slug: row.product_slug,
@@ -701,6 +704,7 @@ function createApp() {
     if (error.code === 'LIMIT_FILE_SIZE') return res.status(400).json({ error: 'That file is too large. Photos are 8 MB and videos are 25 MB.' });
     if (error.type === 'entity.too.large') return res.status(413).json({ error: 'That request is too large.' });
     if (error.status && error.status < 500) return res.status(error.status).json({ error: error.message });
+    if (error.status === 503) return res.status(503).json({ error: error.message });
     console.error(error);
     res.status(500).json({ error: 'Something went wrong. Please try again.' });
   });

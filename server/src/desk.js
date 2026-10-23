@@ -66,12 +66,26 @@ function mapBanner(row) {
     buttonLabel: row.button_label,
     link: row.link_url,
     image: row.image_url,
+    mobileImage: row.mobile_image_url || '',
     productSlug: row.product_slug,
     variantLabel: row.variant_label,
     active: row.active,
     sortOrder: row.sort_order,
   };
 }
+
+function uploaded(req, field) {
+  return req.files?.[field]?.[0] || null;
+}
+
+function dropUpload(file) {
+  if (file?.path && fs.existsSync(file.path)) fs.unlinkSync(file.path);
+}
+
+const bannerFiles = bannerUpload.fields([
+  { name: 'image', maxCount: 1 },
+  { name: 'mobileImage', maxCount: 1 },
+]);
 
 async function bannerProduct(body) {
   const slug = clip(body?.productSlug, 120);
@@ -593,14 +607,17 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
     }
   });
 
-  app.post('/api/admin/banners', requireStaff, allow('admin'), bannerUpload.single('image'), async (req, res, next) => {
+  app.post('/api/admin/banners', requireStaff, allow('admin'), bannerFiles, async (req, res, next) => {
+    const desktopFile = uploaded(req, 'image');
+    const phoneFile = uploaded(req, 'mobileImage');
     try {
       const product = await bannerProduct(req.body);
-      const image = req.file ? `/banner-images/${req.file.filename}` : product.image;
+      const image = desktopFile ? `/banner-images/${desktopFile.filename}` : product.image;
       if (!image) return res.status(400).json({ error: 'Choose a combo or a banner image.' });
+      const mobileImage = phoneFile ? `/banner-images/${phoneFile.filename}` : '';
       const inserted = await getPool().query(
-        `INSERT INTO banners (title, subtitle, button_label, link_url, image_url, active, product_slug, variant_label, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM banners))
+        `INSERT INTO banners (title, subtitle, button_label, link_url, image_url, mobile_image_url, active, product_slug, variant_label, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM banners))
          RETURNING *`,
         [
           clip(req.body?.title, 90),
@@ -608,6 +625,7 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
           clip(req.body?.buttonLabel, 40),
           product.slug ? '' : bannerLink(req.body?.link),
           image,
+          mobileImage,
           req.body?.active !== 'false',
           product.slug,
           product.label,
@@ -615,25 +633,30 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
       );
       res.status(201).json(mapBanner(inserted.rows[0]));
     } catch (error) {
-      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      dropUpload(desktopFile);
+      dropUpload(phoneFile);
       next(error);
     }
   });
 
-  app.patch('/api/admin/banners/:id', requireStaff, allow('admin'), bannerUpload.single('image'), async (req, res, next) => {
+  app.patch('/api/admin/banners/:id', requireStaff, allow('admin'), bannerFiles, async (req, res, next) => {
+    const desktopFile = uploaded(req, 'image');
+    const phoneFile = uploaded(req, 'mobileImage');
     try {
       const id = Number(req.params.id);
-      const current = await getPool().query('SELECT image_url FROM banners WHERE id = $1', [id]);
+      const current = await getPool().query('SELECT image_url, mobile_image_url FROM banners WHERE id = $1', [id]);
       if (!current.rows[0]) {
-        if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+        dropUpload(desktopFile);
+        dropUpload(phoneFile);
         return res.status(404).json({ error: 'Banner not found.' });
       }
-      const image = req.file ? `/banner-images/${req.file.filename}` : current.rows[0].image_url;
+      const image = desktopFile ? `/banner-images/${desktopFile.filename}` : current.rows[0].image_url;
+      const mobileImage = phoneFile ? `/banner-images/${phoneFile.filename}` : current.rows[0].mobile_image_url;
       const product = await bannerProduct(req.body);
       const updated = await getPool().query(
         `UPDATE banners
-         SET title = $2, subtitle = $3, button_label = $4, link_url = $5, image_url = $6, active = $7,
-             product_slug = $8, variant_label = $9
+         SET title = $2, subtitle = $3, button_label = $4, link_url = $5, image_url = $6, mobile_image_url = $7, active = $8,
+             product_slug = $9, variant_label = $10
          WHERE id = $1
          RETURNING *`,
         [
@@ -643,15 +666,18 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
           clip(req.body?.buttonLabel, 40),
           product.slug ? '' : bannerLink(req.body?.link),
           image,
+          mobileImage,
           req.body?.active !== 'false',
           product.slug,
           product.label,
         ],
       );
-      if (req.file) removeBannerFile(current.rows[0].image_url);
+      if (desktopFile) removeBannerFile(current.rows[0].image_url);
+      if (phoneFile) removeBannerFile(current.rows[0].mobile_image_url);
       res.json(mapBanner(updated.rows[0]));
     } catch (error) {
-      if (req.file?.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+      dropUpload(desktopFile);
+      dropUpload(phoneFile);
       next(error);
     }
   });
@@ -678,9 +704,10 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
 
   app.delete('/api/admin/banners/:id', requireStaff, allow('admin'), async (req, res, next) => {
     try {
-      const found = await getPool().query('DELETE FROM banners WHERE id = $1 RETURNING image_url', [Number(req.params.id)]);
+      const found = await getPool().query('DELETE FROM banners WHERE id = $1 RETURNING image_url, mobile_image_url', [Number(req.params.id)]);
       if (!found.rows[0]) return res.status(404).json({ error: 'Banner not found.' });
       removeBannerFile(found.rows[0].image_url);
+      removeBannerFile(found.rows[0].mobile_image_url);
       res.json({ ok: true });
     } catch (error) {
       next(error);

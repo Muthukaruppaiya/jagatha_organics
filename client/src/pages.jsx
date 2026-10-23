@@ -27,10 +27,17 @@ function useCatalog() {
   return { products, categories, error, loading };
 }
 
+function byWeight(variants, dir = 1) {
+  return [...(variants || [])].sort((a, b) => dir * ((a.weightGrams || a.grams || 0) - (b.weightGrams || b.grams || 0)));
+}
+
 export function ProductCard({ product }) {
   const off = product.fromComparePaise > product.fromPricePaise
     ? Math.round((1 - product.fromPricePaise / product.fromComparePaise) * 100)
     : 0;
+  const lightest = byWeight(product.variants, 1)[0];
+  const fromLabel = product.fromLabel || lightest?.label || '';
+  const fromPrice = product.fromPricePaise || lightest?.pricePaise || 0;
   return (
     <Link to={`/product/${product.slug}`} className="card">
       <span className="card-media">
@@ -41,7 +48,8 @@ export function ProductCard({ product }) {
         <h3>{product.name}</h3>
         <span className="card-foot">
           <span className="price">
-            <strong>{inr(product.fromPricePaise)}</strong>
+            {fromLabel && <small>{fromLabel}</small>}
+            <strong>{inr(fromPrice)}</strong>
             {off > 0 && <s>{inr(product.fromComparePaise)}</s>}
           </span>
           <span className="card-go" aria-hidden="true">→</span>
@@ -231,7 +239,7 @@ export function Product() {
         if (!live) return;
         setProduct(next);
         setImage(0);
-        setVariantId(next.variants[0]?.id || null);
+        setVariantId(byWeight(next.variants, -1)[0]?.id || next.variants[0]?.id || null);
         setQuantity(1);
       })
       .catch((err) => live && setError(err.message));
@@ -242,7 +250,7 @@ export function Product() {
   if (error) return <p className="wrap status error">{error}</p>;
   if (!product) return <p className="wrap status">Loading…</p>;
 
-  const variant = product.variants.find((item) => item.id === variantId) || product.variants[0];
+  const variant = product.variants.find((item) => item.id === variantId) || byWeight(product.variants, -1)[0];
   const left = Number.isInteger(variant?.stockQty) ? variant.stockQty : null;
   const out = left === 0;
 
@@ -329,15 +337,35 @@ export function Product() {
           <strong>{inr(variant.pricePaise)}</strong>
           {variant.comparePaise > variant.pricePaise && <s>{inr(variant.comparePaise)}</s>}
         </p>
-        <fieldset>
-          <legend>Pack</legend>
-          <div className="packs">
-            {product.variants.map((item) => (
-              <button key={item.id} type="button" className={item.id === variant.id ? 'pack on' : 'pack'} onClick={() => { setVariantId(item.id); setAdded(false); }}>
-                <b>{item.label}</b>
-                <span>{inr(item.pricePaise)}</span>
-              </button>
-            ))}
+        <fieldset className="pack-pick">
+          <legend>Choose a pack</legend>
+          <div className="pack-list" role="listbox" aria-label="Pack size">
+            {byWeight(product.variants, -1).map((item) => {
+              const on = item.id === variant.id;
+              const save = item.comparePaise > item.pricePaise
+                ? Math.round((1 - item.pricePaise / item.comparePaise) * 100)
+                : 0;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="option"
+                  aria-selected={on}
+                  className={on ? 'pack-line on' : 'pack-line'}
+                  onClick={() => { setVariantId(item.id); setAdded(false); }}
+                >
+                  <span className="pack-dot" aria-hidden="true" />
+                  <span className="pack-copy">
+                    <b>{item.label}</b>
+                    {save > 0 && <small>{save}% off</small>}
+                  </span>
+                  <span className="pack-cost">
+                    <strong>{inr(item.pricePaise)}</strong>
+                    {item.comparePaise > item.pricePaise && <s>{inr(item.comparePaise)}</s>}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </fieldset>
         <div className="buy-row">

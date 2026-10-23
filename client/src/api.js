@@ -85,6 +85,11 @@ export const api = {
   myOrder: (orderNumber) => request(`/api/account/orders/${encodeURIComponent(orderNumber)}`, { headers: customerHeaders() }),
   paymentSession: (orderNumber) => request(`/api/account/orders/${encodeURIComponent(orderNumber)}/payment`, { headers: customerHeaders() }),
   deskProducts: () => request('/api/admin/products', { headers: authHeaders() }),
+  savePrices: (updates) => request('/api/admin/prices', {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ updates }),
+  }),
   saveProduct: (slug, body) => request(slug ? `/api/admin/products/${slug}` : '/api/admin/products', {
     method: slug ? 'PATCH' : 'POST',
     headers: { 'Content-Type': 'application/json', ...authHeaders() },
@@ -104,10 +109,11 @@ export const api = {
     return data;
   }, (catalog) => catalog.banners || []),
   deskBanners: () => request('/api/admin/banners', { headers: authHeaders() }),
-  saveBanner: (id, fields, file) => {
+  saveBanner: (id, fields, file, mobileFile) => {
     const body = new FormData();
     for (const [key, value] of Object.entries(fields)) body.append(key, String(value));
     if (file) body.append('image', file);
+    if (mobileFile) body.append('mobileImage', mobileFile);
     return request(id ? `/api/admin/banners/${id}` : '/api/admin/banners', {
       method: id ? 'PATCH' : 'POST',
       headers: authHeaders(),

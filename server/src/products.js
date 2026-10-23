@@ -259,6 +259,31 @@ export function registerProductDesk(app, { requireStaff, allow }) {
     if (saved) res.json(saved);
   });
 
+  app.patch('/api/admin/prices', ...owner, async (req, res, next) => {
+    const saved = await inTransaction(res, next, async (client) => {
+      const updates = Array.isArray(req.body?.updates) ? req.body.updates : [];
+      if (!updates.length) throw fail('Change at least one pack price.');
+      for (const item of updates) {
+        const id = Number(item.id);
+        const pricePaise = Number(item.pricePaise);
+        const comparePaise = Number(item.comparePaise || 0);
+        if (!Number.isInteger(id) || id < 1) throw fail('A pack is missing.');
+        if (!Number.isInteger(pricePaise) || pricePaise < 100 || pricePaise > 100000000) {
+          throw fail('Enter a valid selling price in rupees.');
+        }
+        if (!Number.isInteger(comparePaise) || comparePaise < 0) throw fail('Enter a valid MRP, or leave it blank.');
+        const updated = await client.query(
+          `UPDATE variants SET price_paise = $2, compare_paise = $3 WHERE id = $1 RETURNING id`,
+          [id, pricePaise, Math.max(comparePaise, pricePaise)],
+        );
+        if (!updated.rows[0]) throw fail('That pack was not found.');
+      }
+      const { rows } = await client.query(`${productQuery} ORDER BY c.sort_order, c.id, p.sort_order, p.name`);
+      return rows.map(mapDeskProduct);
+    });
+    if (saved) res.json(saved);
+  });
+
   app.delete('/api/admin/categories/:slug', ...owner, async (req, res, next) => {
     const done = await inTransaction(res, next, async (client) => {
       const used = await client.query(

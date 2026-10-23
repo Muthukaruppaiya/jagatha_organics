@@ -210,6 +210,26 @@ export function AdminImages() {
   );
 }
 
+function RankPanel({ title, empty, items }) {
+  const max = Math.max(...items.map((item) => item.paise || 0), 1);
+  return (
+    <section className="report-panel">
+      <header>{title}</header>
+      {items.length === 0 && <p className="muted">{empty}</p>}
+      <ol className="report-rank">
+        {items.map((item, index) => (
+          <li key={item.key}>
+            <i>{index + 1}</i>
+            <span>{item.label}</span>
+            <b>{item.value}</b>
+            <em style={{ width: `${Math.max(8, (item.paise / max) * 100)}%` }} />
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 export function AdminReports() {
   const blocked = useGuard(['admin', 'billing']);
   const [from, setFrom] = useState('');
@@ -275,42 +295,71 @@ export function AdminReports() {
       {report && tab === 'overview' && (
         <>
           <p className="print-only">Jagatha Organics report · {range}</p>
-          <div className="desk-stats">
-            <article><span>Website</span><strong>{report.onlineOrders}</strong><small>{inr(report.onlinePaise)}</small></article>
-            <article><span>WhatsApp</span><strong>{report.whatsappOrders || 0}</strong><small>{inr(report.whatsappPaise || 0)}</small></article>
-            <article><span>Taken together</span><strong>{inr(totalPaise)}</strong><small>{report.cancelled} cancelled</small></article>
-            <article><span>Delivery collected</span><strong>{inr(report.shippingPaise || 0)}</strong><small>{report.paidOrders || 0} paid</small></article>
+          <div className="report-kpis">
+            <div>
+              <span>Website</span>
+              <strong>{report.onlineOrders}</strong>
+              <small>{inr(report.onlinePaise)}</small>
+            </div>
+            <div>
+              <span>WhatsApp</span>
+              <strong>{report.whatsappOrders || 0}</strong>
+              <small>{inr(report.whatsappPaise || 0)}</small>
+            </div>
+            <div>
+              <span>Taken together</span>
+              <strong>{inr(totalPaise)}</strong>
+              <small>{report.cancelled} cancelled</small>
+            </div>
+            <div>
+              <span>Delivery collected</span>
+              <strong>{inr(report.shippingPaise || 0)}</strong>
+              <small>{report.paidOrders || 0} paid</small>
+            </div>
           </div>
-          <div className="split report-split">
-            <div className="glass summary">
-              <h2>Top packs</h2>
-              {report.top.length === 0 && <p className="muted">No sales in this range.</p>}
-              {report.top.map((item) => (
-                <p key={item.name}><span>{item.name} × {item.quantity}</span><b>{inr(item.paise)}</b></p>
-              ))}
-            </div>
-            <div className="glass summary">
-              <h2>By state</h2>
-              {(report.byState || []).length === 0 && <p className="muted">No state totals yet.</p>}
-              {(report.byState || []).slice(0, 8).map((item) => (
-                <p key={item.state}><span>{item.state} · {item.orders}</span><b>{inr(item.paise)}</b></p>
-              ))}
-            </div>
-          </div>
-          <div className="split report-split">
-            <div className="glass summary">
-              <h2>Order status</h2>
-              {(report.byStatus || []).map((item) => (
-                <p key={item.status}><span>{STATUS_LABEL[item.status] || item.status} · {item.orders}</span><b>{inr(item.paise)}</b></p>
-              ))}
-            </div>
-            <div className="glass summary">
-              <h2>Low stock</h2>
+          <div className="report-grid">
+            <RankPanel
+              title="Top packs"
+              empty="No sales in this range."
+              items={report.top.map((item) => ({
+                key: item.name,
+                label: `${item.name} × ${item.quantity}`,
+                value: inr(item.paise),
+                paise: item.paise,
+              }))}
+            />
+            <RankPanel
+              title="By state"
+              empty="No state totals yet."
+              items={(report.byState || []).slice(0, 8).map((item) => ({
+                key: item.state,
+                label: `${item.state} · ${item.orders}`,
+                value: inr(item.paise),
+                paise: item.paise,
+              }))}
+            />
+            <RankPanel
+              title="Order status"
+              empty="No orders in this range."
+              items={(report.byStatus || []).map((item) => ({
+                key: item.status,
+                label: `${STATUS_LABEL[item.status] || item.status} · ${item.orders}`,
+                value: inr(item.paise),
+                paise: item.paise,
+              }))}
+            />
+            <section className="report-panel">
+              <header>Low stock</header>
               {report.lowStock.length === 0 && <p className="muted">Nothing is at 8 or below.</p>}
-              {report.lowStock.map((item) => (
-                <p key={`${item.name}-${item.label}`}><span>{item.name} · {item.label}</span><b className="low">{item.stockQty}</b></p>
-              ))}
-            </div>
+              <ul className="report-stock">
+                {report.lowStock.map((item) => (
+                  <li key={`${item.name}-${item.label}`}>
+                    <span>{item.name}<small>{item.label}</small></span>
+                    <b className="low">{item.stockQty}</b>
+                  </li>
+                ))}
+              </ul>
+            </section>
           </div>
         </>
       )}
@@ -332,8 +381,8 @@ export function AdminReports() {
         </div>
       )}
       {report && tab === 'revenue' && (
-        <section className="glass summary">
-          <h2>Revenue by day</h2>
+        <section className="report-panel report-wide">
+          <header>Revenue by day</header>
           {(report.daily || []).length === 0 && <p className="muted">No revenue in this range.</p>}
           <div className="bars">
             {(report.daily || []).map((day) => {
@@ -656,17 +705,20 @@ function BannerEditor({ banner, products, first, last, busy, onSaved, onMove, on
     active: banner.active,
   });
   const [file, setFile] = useState(null);
+  const [mobileFile, setMobileFile] = useState(null);
   const [saving, setSaving] = useState(false);
   const [note, setNote] = useState('');
   const preview = useImagePreview(file);
+  const mobilePreview = useImagePreview(mobileFile);
 
   async function save(event) {
     event.preventDefault();
     setSaving(true);
     setNote('');
     try {
-      const saved = await api.saveBanner(banner.id, fields, file);
+      const saved = await api.saveBanner(banner.id, fields, file, mobileFile);
       setFile(null);
+      setMobileFile(null);
       setNote('Saved.');
       onSaved(saved);
     } catch (err) {
@@ -677,14 +729,19 @@ function BannerEditor({ banner, products, first, last, busy, onSaved, onMove, on
   }
 
   return (
-    <form className={fields.active ? 'glass banner-card' : 'glass banner-card off'} onSubmit={save}>
-      <div className="banner-thumb">
-        <img src={preview || banner.image} alt="" />
-        {!banner.active && <span className="chip">Hidden</span>}
-        <label className="btn ghost tiny file-btn">
-          Replace image
+    <form className={fields.active ? 'banner-card' : 'banner-card off'} onSubmit={save}>
+      <div className="banner-thumb banner-sizes">
+        <label className={`banner-drop ${(preview || banner.image) ? 'has-photo' : ''}`}>
+          {(preview || banner.image) && <img src={preview || banner.image} alt="" />}
+          <span><b>Computer</b><small>1600 × 700 px</small></span>
           <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0] || null)} />
         </label>
+        <label className={`banner-drop phone ${(mobilePreview || banner.mobileImage) ? 'has-photo' : ''}`}>
+          {(mobilePreview || banner.mobileImage) && <img src={mobilePreview || banner.mobileImage} alt="" />}
+          <span><b>Phone</b><small>1080 × 1080 px</small></span>
+          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setMobileFile(event.target.files?.[0] || null)} />
+        </label>
+        {!banner.active && <span className="chip">Hidden</span>}
       </div>
       <div className="form banner-form">
         <BannerFields fields={fields} onChange={setFields} products={products} />
@@ -706,9 +763,11 @@ export function AdminBanners() {
   const [products, setProducts] = useState([]);
   const [fields, setFields] = useState(EMPTY_BANNER);
   const [file, setFile] = useState(null);
+  const [mobileFile, setMobileFile] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const preview = useImagePreview(file);
+  const mobilePreview = useImagePreview(mobileFile);
   const picked = products.find((item) => item.slug === fields.productSlug);
 
   useEffect(() => {
@@ -725,10 +784,11 @@ export function AdminBanners() {
     setBusy(true);
     setError('');
     try {
-      const saved = await api.saveBanner(null, fields, file);
+      const saved = await api.saveBanner(null, fields, file, mobileFile);
       setBanners((current) => [...current, saved]);
       setFields(EMPTY_BANNER);
       setFile(null);
+      setMobileFile(null);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -768,14 +828,20 @@ export function AdminBanners() {
   if (blocked) return blocked;
   const shown = banners.filter((banner) => banner.active).length;
   return (
-    <AdminShell eyebrow="Homepage" title="Banners" lead="This month's combo offers slide across the top of the home page. Pick the combo and the pack whose price it shows; a customer who clicks the banner opens that product page.">
-      <form className="glass banner-card banner-new" onSubmit={add}>
-        <label className="banner-thumb banner-drop">
-          {preview || picked?.images[0]
-            ? <img src={preview || picked.images[0]} alt="" />
-            : <span><b>Choose a banner image</b><small>Optional for a combo. Wide image, about 1600 × 600</small></span>}
-          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0] || null)} />
-        </label>
+    <AdminShell eyebrow="Homepage" title="Banners" lead="Use two sizes so the photo fills the frame with no empty bars. Computer: 1600 × 700 px. Phone: 1080 × 1080 px. If you skip the phone image, the computer image is used. Pick the combo whose product page opens when a customer taps the banner.">
+      <form className="banner-card banner-new" onSubmit={add}>
+        <div className="banner-thumb banner-sizes">
+          <label className={`banner-drop ${(preview || picked?.images[0]) ? 'has-photo' : ''}`}>
+            {(preview || picked?.images[0]) && <img src={preview || picked.images[0]} alt="" />}
+            <span><b>Computer image</b><small>1600 × 700 px · landscape</small></span>
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setFile(event.target.files?.[0] || null)} />
+          </label>
+          <label className={`banner-drop phone ${mobilePreview ? 'has-photo' : ''}`}>
+            {mobilePreview && <img src={mobilePreview} alt="" />}
+            <span><b>Phone image</b><small>1080 × 1080 px · square</small></span>
+            <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setMobileFile(event.target.files?.[0] || null)} />
+          </label>
+        </div>
         <div className="form banner-form">
           <h2>Add a combo offer</h2>
           <BannerFields fields={fields} onChange={setFields} products={products} />

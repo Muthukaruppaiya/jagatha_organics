@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { OrderPanel } from './checkout.jsx';
 import { api, clearCustomer, forgetCustomer, inr, readCustomer, saveCustomer, sourceLabel, STATUS_LABEL, when } from './api.js';
+
+function displayEmail(email) {
+  const value = String(email || '');
+  return value.endsWith('@phone.jagathaorganics.com') ? '' : value;
+}
 
 export function AccountLogin() {
   const navigate = useNavigate();
@@ -86,15 +92,8 @@ export function AccountLogin() {
       <form className="glass form" onSubmit={submit}>
         {verifying ? (
           <>
-            <p className="muted">Enter the 6-digit code sent to <b>{sent.email}</b>.</p>
-            {sent.code && (
-              <div className="otp-show">
-                <small>Your verification code</small>
-                <b>{sent.code}</b>
-                <small>{sent.delivered ? 'Also sent to your email.' : 'Shown here because email is not connected yet.'}</small>
-              </div>
-            )}
-            {!sent.code && !sent.delivered && <p className="note">Check your email for the 6-digit code. If it does not arrive, check spam or ask the kitchen to turn on on-screen codes.</p>}
+            <p className="muted">Enter the 6-digit code we emailed to <b>{sent.sentTo || sent.email}</b>.</p>
+            <p className="note">Check your inbox and spam folder. After WhatsApp is connected, we can send the same code there too.</p>
             <input
               className="otp-input"
               value={code}
@@ -149,6 +148,7 @@ export function AccountHome() {
   const [body, setBody] = useState('');
   const [error, setError] = useState('');
   const [saved, setSaved] = useState('');
+  const [openOrder, setOpenOrder] = useState('');
 
   useEffect(() => {
     let live = true;
@@ -218,32 +218,43 @@ export function AccountHome() {
     navigate('/');
   }
 
+  const mail = displayEmail(customer.email);
+
   return (
     <div className="wrap page">
       <div className="page-intro">
         <p className="eyebrow">Account</p>
         <h1>{customer.name}</h1>
-        <p>{customer.email}{customer.phone ? ` · ${customer.phone}` : ''}</p>
+        <p>{[mail, customer.phone].filter(Boolean).join(' · ')}</p>
         <button className="text" type="button" onClick={logout}>Sign out</button>
       </div>
       {error && <p className="status error">{error}</p>}
       <div className="account-grid">
-        <section className="glass summary">
+        <section className="glass summary account-orders">
           <h2>Last orders</h2>
+          <p className="muted">Tap an order to see packing progress, courier details, and the delivery address.</p>
           {orders.length === 0 && <p className="muted">No orders yet. The shelf is open.</p>}
-          {orders.map((order) => (
-            <article key={order.orderNumber} className="account-order">
-              <p><b>{order.orderNumber}</b> <span className={`tag ${order.status}`}>{STATUS_LABEL[order.status]}</span></p>
-              <p className="muted">{when(order.createdAt)} · {sourceLabel(order.channel)} · {inr(order.totalPaise)}</p>
-              <ul>
-                {order.items.map((item, index) => (
-                  <li key={`${item.productName}-${index}`}>{item.productName} · {item.variantLabel} × {item.quantity}</li>
-                ))}
-              </ul>
-              {order.courierName && <p className="muted">Courier {order.courierName} {order.trackingNumber}</p>}
-              <Link to="/track">Track order</Link>
-            </article>
-          ))}
+          {orders.map((order) => {
+            const open = openOrder === order.orderNumber;
+            return (
+              <article key={order.orderNumber} className={open ? 'account-order open' : 'account-order'}>
+                <button
+                  className="account-order-head"
+                  type="button"
+                  onClick={() => setOpenOrder(open ? '' : order.orderNumber)}
+                  aria-expanded={open}
+                >
+                  <span>
+                    <b>{order.orderNumber}</b>
+                    <small>{when(order.createdAt)} · {sourceLabel(order.channel)} · {inr(order.totalPaise)}</small>
+                    <small>{order.items.map((item) => `${item.productName} · ${item.variantLabel} × ${item.quantity}`).join(', ')}</small>
+                  </span>
+                  <span className={`tag ${order.status}`}>{STATUS_LABEL[order.status]}</span>
+                </button>
+                {open && <OrderPanel order={order} />}
+              </article>
+            );
+          })}
         </section>
         <section className="glass summary">
           <h2>Favourites</h2>
@@ -255,22 +266,24 @@ export function AccountHome() {
               <button type="button" className="text" onClick={() => unsave(item)}>Remove</button>
             </p>
           ))}
-          <h2>Write a review</h2>
-          <form className="form" onSubmit={submitReview}>
-            <label>Product
-              <select value={slug} onChange={(event) => setSlug(event.target.value)}>
-                {products.map((product) => <option key={product.slug} value={product.slug}>{product.name}</option>)}
-              </select>
-            </label>
-            <label>Rating
-              <select value={rating} onChange={(event) => setRating(Number(event.target.value))}>
-                {[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{value} star{value > 1 ? 's' : ''}</option>)}
-              </select>
-            </label>
-            <label>Review<textarea value={body} onChange={(event) => setBody(event.target.value)} rows={4} required minLength={8} /></label>
-            {saved && <p className="note">{saved}</p>}
-            <button className="btn" type="submit">Send for approval</button>
-          </form>
+          <details className="account-review">
+            <summary>Write a review</summary>
+            <form className="form" onSubmit={submitReview}>
+              <label>Product
+                <select value={slug} onChange={(event) => setSlug(event.target.value)}>
+                  {products.map((product) => <option key={product.slug} value={product.slug}>{product.name}</option>)}
+                </select>
+              </label>
+              <label>Rating
+                <select value={rating} onChange={(event) => setRating(Number(event.target.value))}>
+                  {[5, 4, 3, 2, 1].map((value) => <option key={value} value={value}>{value} star{value > 1 ? 's' : ''}</option>)}
+                </select>
+              </label>
+              <label>Review<textarea value={body} onChange={(event) => setBody(event.target.value)} rows={4} required minLength={8} /></label>
+              {saved && <p className="note">{saved}</p>}
+              <button className="btn" type="submit">Send for approval</button>
+            </form>
+          </details>
           {reviews.map((review) => (
             <p key={review.id}><b>{review.productName}</b> · {review.rating}/5 · {review.status === 'approved' ? 'On the site' : review.status === 'rejected' ? 'Not published' : 'Waiting for approval'}</p>
           ))}

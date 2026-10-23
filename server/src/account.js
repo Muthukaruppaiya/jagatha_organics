@@ -9,7 +9,6 @@ import {
   clearCustomerCookie,
   jwtSecret,
   readCustomerToken,
-  revealOtp,
   setCustomerCookie,
   signCustomerToken,
 } from './session.js';
@@ -24,6 +23,37 @@ function otpHash(email, code) {
 
 function clip(value, max) {
   return String(value ?? '').trim().slice(0, max);
+}
+
+function isRealEmail(email) {
+  const value = String(email || '').trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && !/@phone\.jagathaorganics\.com$/i.test(value);
+}
+
+function maskEmail(email) {
+  const value = String(email || '').trim().toLowerCase();
+  const at = value.indexOf('@');
+  if (at < 1) return value;
+  const user = value.slice(0, at);
+  const domain = value.slice(at);
+  const keep = user.slice(0, Math.min(2, user.length));
+  return `${keep}${'•'.repeat(Math.max(1, user.length - keep.length))}${domain}`;
+}
+
+async function deliverOtp({ email, name, code }) {
+  const mail = await sendMail({
+    to: email,
+    subject: `${code} is your Jagatha Organics code`,
+    text: `Hello ${name || 'there'},\n\nYour Jagatha Organics verification code is ${code}. It works for ${OTP_MINUTES} minutes.\n\nIf you did not ask for it, ignore this email.`,
+    html: `<p>Hello ${(name || 'there').replace(/[<>&]/g, '')},</p><p>Your Jagatha Organics verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It works for ${OTP_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
+  });
+  // WhatsApp OTP can use the same code once a WhatsApp provider is connected.
+  if (!mail.delivered) {
+    const error = new Error('We could not send the code to your email. Check the address and try again.');
+    error.status = 503;
+    throw error;
+  }
+  return { email: true, whatsapp: false };
 }
 
 export function customerFrom(req) {
@@ -136,13 +166,8 @@ export function registerAccount(app) {
              expires_at = EXCLUDED.expires_at, sent_at = NOW()`,
         [email, otpHash(email, code), { name, phone, passwordHash: bcrypt.hashSync(password, 10) }, OTP_MINUTES],
       );
-      const mail = await sendMail({
-        to: email,
-        subject: `${code} is your Jagatha Organics code`,
-        text: `Hello ${name},\n\nYour Jagatha Organics verification code is ${code}. It works for ${OTP_MINUTES} minutes.\n\nIf you did not ask for it, ignore this email.`,
-        html: `<p>Hello ${name.replace(/[<>&]/g, '')},</p><p>Your Jagatha Organics verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It works for ${OTP_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
-      });
-      res.json({ sent: true, email, delivered: mail.delivered, ...(revealOtp() ? { code } : {}) });
+      await deliverOtp({ email, name, code });
+      res.json({ sent: true, email, sentTo: maskEmail(email), delivered: true });
     } catch (error) {
       if (error.status === 503) return res.status(503).json({ error: error.message });
       next(error);
@@ -193,6 +218,7 @@ export function registerAccount(app) {
     try {
       const phone = cleanPhone(req.body?.phone);
       const name = clip(req.body?.name, 80);
+      const givenEmail = clip(req.body?.email, 120).toLowerCase();
       if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a 10-digit mobile number.' });
       const key = `phone:${phone}`;
       const recent = await getPool().query(
@@ -209,6 +235,10 @@ export function registerAccount(app) {
         return res.status(404).json({ error: 'No orders for that mobile number yet.' });
       }
       if (!existing && name.length < 2) return res.status(400).json({ error: 'Enter your name to create an account.' });
+      const email = isRealEmail(existing?.email) ? existing.email : givenEmail;
+      if (!isRealEmail(email)) {
+        return res.status(400).json({ error: 'Enter the email where we should send the verification code.' });
+      }
       const code = String(crypto.randomInt(100000, 1000000));
       await getPool().query(
         `INSERT INTO otp_codes (email, code_hash, payload, attempts, expires_at, sent_at)
@@ -216,16 +246,19 @@ export function registerAccount(app) {
          ON CONFLICT (email) DO UPDATE
          SET code_hash = EXCLUDED.code_hash, payload = EXCLUDED.payload, attempts = 0,
              expires_at = EXCLUDED.expires_at, sent_at = NOW()`,
-        [key, otpHash(key, code), { phone, name: existing?.name || name, customerId: existing?.id || null }, OTP_MINUTES],
+        [key, otpHash(key, code), { phone, name: existing?.name || name, customerId: existing?.id || null, email }, OTP_MINUTES],
       );
+      await deliverOtp({ email, name: existing?.name || name, code });
       res.json({
         sent: true,
         phone,
         exists: Boolean(existing),
         name: existing?.name || name,
-        ...(revealOtp() ? { code } : {}),
+        sentTo: maskEmail(email),
+        delivered: true,
       });
     } catch (error) {
+      if (error.status === 503) return res.status(503).json({ error: error.message });
       next(error);
     }
   });
@@ -262,6 +295,19 @@ export function registerAccount(app) {
           [row.payload.customerId],
         );
         customerRow = found.rows[0];
+        if (customerRow && isRealEmail(row.payload.email) && !isRealEmail(customerRow.email)) {
+          const clash = await client.query(
+            'SELECT id FROM customers WHERE lower(email) = $1 AND id <> $2',
+            [row.payload.email, customerRow.id],
+          );
+          if (!clash.rows[0]) {
+            const updated = await client.query(
+              'UPDATE customers SET email = $2 WHERE id = $1 RETURNING id, name, email, phone',
+              [customerRow.id, row.payload.email],
+            );
+            customerRow = updated.rows[0];
+          }
+        }
       }
       if (!customerRow) {
         const accountName = name || row.payload.name || '';
@@ -269,7 +315,7 @@ export function registerAccount(app) {
           await client.query('ROLLBACK');
           return res.status(400).json({ error: 'Enter your name to create an account.' });
         }
-        const email = `${phone}@phone.jagathaorganics.com`;
+        const email = isRealEmail(row.payload.email) ? row.payload.email : `${phone}@phone.jagathaorganics.com`;
         const inserted = await client.query(
           `INSERT INTO customers (name, email, phone, password_hash)
            VALUES ($1, $2, $3, $4)

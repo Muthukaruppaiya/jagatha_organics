@@ -5,7 +5,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const API = 'http://127.0.0.1:4100';
+const API = 'http://127.0.0.1:4000';
 
 const MIME = {
   '.jpg': 'image/jpeg',
