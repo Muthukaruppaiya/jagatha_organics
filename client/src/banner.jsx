@@ -4,6 +4,15 @@ import { api, inr } from './api.js';
 
 const SLIDE_MS = 5000;
 
+function BannerArt({ src }) {
+  return (
+    <>
+      <img className="banner-fill" src={src} alt="" aria-hidden="true" />
+      <img className="banner-shot" src={src} alt="" />
+    </>
+  );
+}
+
 function BannerButton({ banner }) {
   if (!banner.link || !banner.buttonLabel) return null;
   if (banner.link.startsWith('/')) return <Link className="btn banner-cta" to={banner.link}>{banner.buttonLabel}</Link>;
@@ -34,6 +43,7 @@ function ComboOffer({ banner, onOrder }) {
 export function HeroBanner() {
   const [banners, setBanners] = useState([]);
   const [index, setIndex] = useState(0);
+  const [paused, setPaused] = useState(false);
   const touchX = useRef(null);
   const navigate = useNavigate();
 
@@ -44,10 +54,10 @@ export function HeroBanner() {
   }, []);
 
   useEffect(() => {
-    if (banners.length < 2) return undefined;
+    if (banners.length < 2 || paused) return undefined;
     const timer = window.setTimeout(() => setIndex((value) => (value + 1) % banners.length), SLIDE_MS);
     return () => window.clearTimeout(timer);
-  }, [index, banners.length]);
+  }, [index, banners.length, paused]);
 
   function order(banner) {
     navigate(`/product/${banner.product.slug}`);
@@ -62,6 +72,8 @@ export function HeroBanner() {
       className="wrap banner-stage"
       aria-roledescription="carousel"
       aria-label="This month's combo offers"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
       onTouchStart={(event) => { touchX.current = event.touches[0].clientX; }}
       onTouchEnd={(event) => {
         if (touchX.current === null) return;
@@ -81,7 +93,7 @@ export function HeroBanner() {
             aria-hidden={position !== current}
             aria-roledescription="slide"
             aria-label={`${position + 1} of ${banners.length}`}
-            onClick={combo ? (event) => { if (!event.target.closest('button')) order(banner); } : undefined}
+            onClick={combo ? (event) => { if (!event.target.closest('button, a')) order(banner); } : undefined}
           >
             {!bare && (
               <div className="banner-copy">
@@ -97,10 +109,10 @@ export function HeroBanner() {
               {bare && !combo && banner.link
                 ? (
                   <Link to={banner.link.startsWith('/') ? banner.link : '/shop'} aria-label={banner.buttonLabel || 'Open offer'}>
-                    <img src={banner.image} alt="" />
+                    <BannerArt src={banner.image} />
                   </Link>
                 )
-                : <img src={banner.image} alt="" />}
+                : <BannerArt src={banner.image} />}
               {bare && combo && (
                 <button className="btn banner-cta banner-float" type="button" onClick={() => order(banner)}>
                   {banner.buttonLabel || 'Order now'} · {inr(banner.product.pricePaise)}
@@ -110,6 +122,29 @@ export function HeroBanner() {
           </article>
         );
       })}
+      {banners.length > 1 && (
+        <div className="banner-controls">
+          <button className="banner-arrow" type="button" aria-label="Previous offer" onClick={() => step(-1)}>
+            ‹
+          </button>
+          <div className="banner-dots" role="tablist" aria-label="Offers">
+            {banners.map((banner, position) => (
+              <button
+                key={banner.id}
+                type="button"
+                role="tab"
+                aria-label={`Show offer ${position + 1}`}
+                aria-selected={position === current}
+                className={position === current ? 'on' : ''}
+                onClick={() => setIndex(position)}
+              />
+            ))}
+          </div>
+          <button className="banner-arrow" type="button" aria-label="Next offer" onClick={() => step(1)}>
+            ›
+          </button>
+        </div>
+      )}
     </section>
   );
 }

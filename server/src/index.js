@@ -729,7 +729,7 @@ async function expireUnpaidOrders() {
 }
 
 const app = createApp();
-const port = Number(process.env.PORT || 4000);
+const port = Number(process.env.PORT || 4100);
 
 startDatabase()
   .then((pool) => seedDatabase(pool))

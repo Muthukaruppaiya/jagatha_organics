@@ -92,6 +92,23 @@ catalog.banners = banners.map((banner, index) => {
   };
 });
 
+function copyFolder(from, to) {
+  if (!fs.existsSync(from)) return 0;
+  fs.mkdirSync(to, { recursive: true });
+  let count = 0;
+  for (const file of fs.readdirSync(from)) {
+    const src = path.join(from, file);
+    if (!fs.statSync(src).isFile()) continue;
+    fs.copyFileSync(src, path.join(to, file));
+    count += 1;
+  }
+  return count;
+}
+
 fs.mkdirSync(publicDir, { recursive: true });
+const bannersCopied = copyFolder(
+  path.resolve(__dirname, '../../reference/banners'),
+  path.join(publicDir, 'banner-images'),
+);
 fs.writeFileSync(path.join(publicDir, 'catalog.json'), JSON.stringify(catalog));
-console.log(`Static catalog: ${catalog.products.length} products`);
+console.log(`Static catalog: ${catalog.products.length} products, ${bannersCopied} banners`);
