@@ -1309,6 +1309,24 @@ fieldset.plain:disabled { opacity: 0.7; }
 .banner-cta:hover { background: #f0d4a2; transform: translateY(-1px); }
 .banner-slide.combo { cursor: pointer; }
 .banner-float { position: absolute; z-index: 3; right: 14px; bottom: 14px; min-height: 44px; width: auto; }
+.banner-price-tag {
+  position: absolute;
+  z-index: 3;
+  right: 12px;
+  bottom: 12px;
+  border: 0;
+  margin: 0;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(10, 18, 14, 0.38);
+  color: rgba(247, 243, 234, 0.78);
+  font-size: 0.78rem;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+.banner-price-tag:hover { color: #f7f3ea; background: rgba(10, 18, 14, 0.52); }
 .banner-media {
   position: relative;
   z-index: 1;
@@ -1562,6 +1580,7 @@ fieldset.plain:disabled { opacity: 0.7; }
   .banner-media { aspect-ratio: 16 / 7; }
   .banner-media.phone { aspect-ratio: 1 / 1; }
   .banner-float { right: 12px; bottom: 12px; }
+  .banner-price-tag { right: 10px; bottom: 10px; font-size: 0.72rem; padding: 4px 8px; }
   .banner-controls { right: 50%; bottom: 10px; transform: translateX(50%); }
   .banner-arrow { width: 32px; height: 32px; font-size: 1.25rem; }
   .banner-sizes { grid-template-columns: 1fr; }

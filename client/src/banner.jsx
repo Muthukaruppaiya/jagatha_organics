@@ -19,11 +19,8 @@ function BannerButton({ banner }) {
   return <a className="btn banner-cta banner-float" href={banner.link} target="_blank" rel="noreferrer">{banner.buttonLabel}</a>;
 }
 
-function bannerOffer(banner) {
-  return {
-    label: banner.packLabel || banner.product?.label || '',
-    pricePaise: banner.pricePaise || banner.product?.pricePaise || 0,
-  };
+function bannerPrice(banner) {
+  return banner.pricePaise || banner.product?.pricePaise || 0;
 }
 
 export function HeroBanner() {
@@ -74,8 +71,8 @@ export function HeroBanner() {
       }}
     >
       {banners.map((banner, position) => {
-        const offer = bannerOffer(banner);
-        const combo = Boolean(banner.product || offer.pricePaise || offer.label);
+        const pricePaise = bannerPrice(banner);
+        const combo = Boolean(banner.product || pricePaise);
         const classes = ['banner-slide', position === current && 'on', combo && 'combo'].filter(Boolean).join(' ');
         return (
           <article
@@ -94,11 +91,9 @@ export function HeroBanner() {
                   </Link>
                 )
                 : <BannerArt src={banner.image} mobileSrc={banner.mobileImage} alt={banner.title || ''} />}
-              {combo && (
-                <button className="btn banner-cta banner-float" type="button" onClick={() => order(banner)}>
-                  {banner.buttonLabel || 'Order now'}
-                  {offer.label ? ` · ${offer.label}` : ''}
-                  {offer.pricePaise ? ` · ${inr(offer.pricePaise)}` : ''}
+              {pricePaise > 0 && (
+                <button className="banner-price-tag" type="button" onClick={() => order(banner)}>
+                  {inr(pricePaise)}
                 </button>
               )}
               {!combo && <BannerButton banner={banner} />}
