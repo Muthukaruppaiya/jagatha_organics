@@ -101,29 +101,6 @@ export function HeroBanner() {
           </article>
         );
       })}
-      {banners.length > 1 && (
-        <div className="banner-controls">
-          <button className="banner-arrow" type="button" aria-label="Previous offer" onClick={() => step(-1)}>
-            ‹
-          </button>
-          <div className="banner-dots" role="tablist" aria-label="Offers">
-            {banners.map((banner, position) => (
-              <button
-                key={banner.id}
-                type="button"
-                role="tab"
-                aria-label={`Show offer ${position + 1}`}
-                aria-selected={position === current}
-                className={position === current ? 'on' : ''}
-                onClick={() => setIndex(position)}
-              />
-            ))}
-          </div>
-          <button className="banner-arrow" type="button" aria-label="Next offer" onClick={() => step(1)}>
-            ›
-          </button>
-        </div>
-      )}
     </section>
   );
 }
