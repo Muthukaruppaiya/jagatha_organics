@@ -673,59 +673,31 @@ function BannerFields({ fields, onChange, products }) {
   const combos = products.filter((item) => item.category.slug === 'gift-boxes');
   const others = products.filter((item) => item.category.slug !== 'gift-boxes');
 
-  function applyVariant(nextFields, variant) {
-    if (!variant) return nextFields;
-    return {
-      ...nextFields,
-      variantLabel: variant.label,
-      packLabel: variant.label,
-      price: rupees(variant.pricePaise),
-      compare: variant.comparePaise > variant.pricePaise ? rupees(variant.comparePaise) : '',
-    };
-  }
-
   function pickProduct(event) {
     const next = products.find((item) => item.slug === event.target.value);
-    onChange(applyVariant({
+    onChange({
       ...fields,
       productSlug: next?.slug || '',
-      variantLabel: '',
+      variantLabel: next?.variants[0]?.label || '',
       title: fields.title || next?.name || '',
       subtitle: fields.subtitle || next?.description || '',
-    }, next?.variants[0]));
-  }
-
-  function pickVariant(event) {
-    const variant = product?.variants.find((item) => item.label === event.target.value);
-    onChange(applyVariant({ ...fields, variantLabel: event.target.value }, variant));
+    });
   }
 
   return (
     <>
-      <div className="banner-pair">
-        <label>
-          Combo customers order
-          <select value={fields.productSlug} onChange={pickProduct}>
-            <option value="">No product (use a link)</option>
-            <optgroup label="Gift boxes">
-              {combos.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
-            </optgroup>
-            <optgroup label="Other products">
-              {others.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
-            </optgroup>
-          </select>
-        </label>
-        {product && (
-          <label>
-            Fill from product pack
-            <select value={fields.variantLabel} onChange={pickVariant}>
-              {product.variants.map((variant) => (
-                <option key={variant.label} value={variant.label}>{variant.label} · {inr(variant.pricePaise)}</option>
-              ))}
-            </select>
-          </label>
-        )}
-      </div>
+      <label>
+        Combo customers order
+        <select value={fields.productSlug} onChange={pickProduct}>
+          <option value="">No product (use a link)</option>
+          <optgroup label="Gift boxes">
+            {combos.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+          </optgroup>
+          <optgroup label="Other products">
+            {others.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+          </optgroup>
+        </select>
+      </label>
       <div className="banner-pair">
         <label>Pack<input value={fields.packLabel} onChange={set('packLabel')} maxLength={40} placeholder="200g or Combo set" /></label>
         <label>Price (₹)<input value={fields.price} onChange={set('price')} inputMode="decimal" placeholder="299" /></label>
