@@ -19,8 +19,27 @@ function BannerButton({ banner }) {
   return <a className="btn banner-cta banner-float" href={banner.link} target="_blank" rel="noreferrer">{banner.buttonLabel}</a>;
 }
 
-function bannerPrice(banner) {
-  return banner.pricePaise || banner.product?.pricePaise || 0;
+function bannerOffer(banner) {
+  const pricePaise = banner.pricePaise || banner.product?.pricePaise || 0;
+  const comparePaise = banner.comparePaise || banner.product?.comparePaise || 0;
+  return {
+    pricePaise,
+    comparePaise: comparePaise > pricePaise ? comparePaise : 0,
+  };
+}
+
+function PriceMark({ banner, onOrder }) {
+  const { pricePaise, comparePaise } = bannerOffer(banner);
+  if (!pricePaise) return null;
+  return (
+    <button className="banner-price-tag" type="button" onClick={onOrder} aria-label={`Buy for ${inr(pricePaise)}`}>
+      <em>₹</em>
+      <span>
+        <strong>{Math.round(pricePaise / 100).toLocaleString('en-IN')}</strong>
+        {comparePaise > 0 && <s>{inr(comparePaise)}</s>}
+      </span>
+    </button>
+  );
 }
 
 export function HeroBanner() {
@@ -71,7 +90,7 @@ export function HeroBanner() {
       }}
     >
       {banners.map((banner, position) => {
-        const pricePaise = bannerPrice(banner);
+        const { pricePaise } = bannerOffer(banner);
         const combo = Boolean(banner.product || pricePaise);
         const classes = ['banner-slide', position === current && 'on', combo && 'combo'].filter(Boolean).join(' ');
         return (
@@ -91,11 +110,7 @@ export function HeroBanner() {
                   </Link>
                 )
                 : <BannerArt src={banner.image} mobileSrc={banner.mobileImage} alt={banner.title || ''} />}
-              {pricePaise > 0 && (
-                <button className="banner-price-tag" type="button" onClick={() => order(banner)}>
-                  {inr(pricePaise)}
-                </button>
-              )}
+              <PriceMark banner={banner} onOrder={() => order(banner)} />
               {!combo && <BannerButton banner={banner} />}
             </div>
           </article>
