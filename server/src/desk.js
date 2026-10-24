@@ -58,6 +58,12 @@ function removeBannerFile(url) {
   if (file.startsWith(bannerRoot) && fs.existsSync(file)) fs.unlinkSync(file);
 }
 
+function rupeesToPaise(value) {
+  const amount = Number(String(value ?? '').replace(/[^\d.]/g, ''));
+  if (!Number.isFinite(amount) || amount < 0) return 0;
+  return Math.round(amount * 100);
+}
+
 function mapBanner(row) {
   return {
     id: row.id,
@@ -69,6 +75,9 @@ function mapBanner(row) {
     mobileImage: row.mobile_image_url || '',
     productSlug: row.product_slug,
     variantLabel: row.variant_label,
+    packLabel: row.pack_label || row.variant_label || '',
+    pricePaise: row.price_paise || 0,
+    comparePaise: row.compare_paise || 0,
     active: row.active,
     sortOrder: row.sort_order,
   };
@@ -616,8 +625,8 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
       if (!image) return res.status(400).json({ error: 'Choose a combo or a banner image.' });
       const mobileImage = phoneFile ? `/banner-images/${phoneFile.filename}` : '';
       const inserted = await getPool().query(
-        `INSERT INTO banners (title, subtitle, button_label, link_url, image_url, mobile_image_url, active, product_slug, variant_label, sort_order)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM banners))
+        `INSERT INTO banners (title, subtitle, button_label, link_url, image_url, mobile_image_url, active, product_slug, variant_label, pack_label, price_paise, compare_paise, sort_order)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM banners))
          RETURNING *`,
         [
           clip(req.body?.title, 90),
@@ -629,6 +638,9 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
           req.body?.active !== 'false',
           product.slug,
           product.label,
+          clip(req.body?.packLabel, 40) || product.label,
+          rupeesToPaise(req.body?.price),
+          rupeesToPaise(req.body?.compare),
         ],
       );
       res.status(201).json(mapBanner(inserted.rows[0]));
@@ -656,7 +668,7 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
       const updated = await getPool().query(
         `UPDATE banners
          SET title = $2, subtitle = $3, button_label = $4, link_url = $5, image_url = $6, mobile_image_url = $7, active = $8,
-             product_slug = $9, variant_label = $10
+             product_slug = $9, variant_label = $10, pack_label = $11, price_paise = $12, compare_paise = $13
          WHERE id = $1
          RETURNING *`,
         [
@@ -670,6 +682,9 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
           req.body?.active !== 'false',
           product.slug,
           product.label,
+          clip(req.body?.packLabel, 40) || product.label,
+          rupeesToPaise(req.body?.price),
+          rupeesToPaise(req.body?.compare),
         ],
       );
       if (desktopFile) removeBannerFile(current.rows[0].image_url);

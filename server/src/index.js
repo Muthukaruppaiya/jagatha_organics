@@ -648,6 +648,7 @@ function createApp() {
     try {
       const { rows } = await getPool().query(
         `SELECT b.id, b.title, b.subtitle, b.button_label, b.link_url, b.image_url, b.mobile_image_url,
+                b.pack_label, b.price_paise AS offer_price_paise, b.compare_paise AS offer_compare_paise,
                 p.slug AS product_slug, p.name AS product_name, p.image_urls[1] AS product_image,
                 v.id AS variant_id, v.label AS variant_label, v.price_paise, v.compare_paise, v.stock_qty
          FROM banners b
@@ -661,27 +662,46 @@ function createApp() {
          WHERE b.active
          ORDER BY b.sort_order, b.id`,
       );
-      res.json(rows.map((row) => ({
-        id: row.id,
-        title: row.title,
-        subtitle: row.subtitle,
-        buttonLabel: row.button_label,
-        link: row.link_url,
-        image: row.image_url,
-        mobileImage: row.mobile_image_url || '',
-        product: row.variant_id
-          ? {
-            slug: row.product_slug,
-            name: row.product_name,
-            image: row.product_image || row.image_url,
-            variantId: row.variant_id,
-            label: row.variant_label,
-            pricePaise: row.price_paise,
-            comparePaise: row.compare_paise,
-            stockQty: row.stock_qty,
-          }
-          : null,
-      })));
+      res.json(rows.map((row) => {
+        const packLabel = row.pack_label || row.variant_label || '';
+        const pricePaise = row.offer_price_paise || row.price_paise || 0;
+        const comparePaise = row.offer_compare_paise || row.compare_paise || 0;
+        return {
+          id: row.id,
+          title: row.title,
+          subtitle: row.subtitle,
+          buttonLabel: row.button_label,
+          link: row.link_url,
+          image: row.image_url,
+          mobileImage: row.mobile_image_url || '',
+          packLabel,
+          pricePaise,
+          comparePaise,
+          product: row.variant_id
+            ? {
+              slug: row.product_slug,
+              name: row.product_name,
+              image: row.product_image || row.image_url,
+              variantId: row.variant_id,
+              label: packLabel || row.variant_label,
+              pricePaise,
+              comparePaise,
+              stockQty: row.stock_qty,
+            }
+            : (pricePaise || packLabel)
+              ? {
+                slug: '',
+                name: row.title,
+                image: row.image_url,
+                variantId: 0,
+                label: packLabel,
+                pricePaise,
+                comparePaise,
+                stockQty: 1,
+              }
+              : null,
+        };
+      }));
     } catch (error) {
       next(error);
     }

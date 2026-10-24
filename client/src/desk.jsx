@@ -619,7 +619,39 @@ export function AdminStaff() {
   );
 }
 
-const EMPTY_BANNER = { title: '', subtitle: '', buttonLabel: 'Order now', link: '', productSlug: '', variantLabel: '', active: true };
+const EMPTY_BANNER = {
+  title: '',
+  subtitle: '',
+  buttonLabel: 'Order now',
+  link: '',
+  productSlug: '',
+  variantLabel: '',
+  packLabel: '',
+  price: '',
+  compare: '',
+  active: true,
+};
+
+function rupees(paise) {
+  return paise ? String(paise / 100) : '';
+}
+
+function fieldsFromBanner(banner, products = []) {
+  const product = products.find((item) => item.slug === banner.productSlug);
+  const variant = product?.variants.find((item) => item.label === banner.variantLabel) || product?.variants[0];
+  return {
+    title: banner.title,
+    subtitle: banner.subtitle,
+    buttonLabel: banner.buttonLabel,
+    link: banner.link,
+    productSlug: banner.productSlug || '',
+    variantLabel: banner.variantLabel || variant?.label || '',
+    packLabel: banner.packLabel || variant?.label || '',
+    price: rupees(banner.pricePaise) || rupees(variant?.pricePaise),
+    compare: rupees(banner.comparePaise) || (variant?.comparePaise > variant?.pricePaise ? rupees(variant.comparePaise) : ''),
+    active: banner.active,
+  };
+}
 
 function useImagePreview(file) {
   const [url, setUrl] = useState('');
@@ -641,15 +673,31 @@ function BannerFields({ fields, onChange, products }) {
   const combos = products.filter((item) => item.category.slug === 'gift-boxes');
   const others = products.filter((item) => item.category.slug !== 'gift-boxes');
 
+  function applyVariant(nextFields, variant) {
+    if (!variant) return nextFields;
+    return {
+      ...nextFields,
+      variantLabel: variant.label,
+      packLabel: variant.label,
+      price: rupees(variant.pricePaise),
+      compare: variant.comparePaise > variant.pricePaise ? rupees(variant.comparePaise) : '',
+    };
+  }
+
   function pickProduct(event) {
     const next = products.find((item) => item.slug === event.target.value);
-    onChange({
+    onChange(applyVariant({
       ...fields,
       productSlug: next?.slug || '',
-      variantLabel: next?.variants[0]?.label || '',
+      variantLabel: '',
       title: fields.title || next?.name || '',
       subtitle: fields.subtitle || next?.description || '',
-    });
+    }, next?.variants[0]));
+  }
+
+  function pickVariant(event) {
+    const variant = product?.variants.find((item) => item.label === event.target.value);
+    onChange(applyVariant({ ...fields, variantLabel: event.target.value }, variant));
   }
 
   return (
@@ -669,8 +717,8 @@ function BannerFields({ fields, onChange, products }) {
         </label>
         {product && (
           <label>
-            Pack
-            <select value={fields.variantLabel} onChange={set('variantLabel')}>
+            Fill from product pack
+            <select value={fields.variantLabel} onChange={pickVariant}>
               {product.variants.map((variant) => (
                 <option key={variant.label} value={variant.label}>{variant.label} · {inr(variant.pricePaise)}</option>
               ))}
@@ -678,6 +726,11 @@ function BannerFields({ fields, onChange, products }) {
           </label>
         )}
       </div>
+      <div className="banner-pair">
+        <label>Pack<input value={fields.packLabel} onChange={set('packLabel')} maxLength={40} placeholder="200g or Combo set" /></label>
+        <label>Price (₹)<input value={fields.price} onChange={set('price')} inputMode="decimal" placeholder="299" /></label>
+      </div>
+      <label>MRP (₹) <small>optional</small><input value={fields.compare} onChange={set('compare')} inputMode="decimal" placeholder="399" /></label>
       <label>Heading<input value={fields.title} onChange={set('title')} maxLength={90} placeholder="Biotin Gift Box" /></label>
       <label>Line under the heading<textarea value={fields.subtitle} onChange={set('subtitle')} maxLength={200} rows={2} placeholder="What is inside the box." /></label>
       <div className="banner-pair">
@@ -695,18 +748,15 @@ function BannerFields({ fields, onChange, products }) {
 }
 
 function BannerEditor({ banner, products, first, last, busy, onSaved, onMove, onRemove }) {
-  const [fields, setFields] = useState({
-    title: banner.title,
-    subtitle: banner.subtitle,
-    buttonLabel: banner.buttonLabel,
-    link: banner.link,
-    productSlug: banner.productSlug || '',
-    variantLabel: banner.variantLabel || '',
-    active: banner.active,
-  });
+  const [fields, setFields] = useState(() => fieldsFromBanner(banner, products));
   const [file, setFile] = useState(null);
   const [mobileFile, setMobileFile] = useState(null);
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!products.length) return;
+    setFields((current) => (current.price || current.packLabel ? current : fieldsFromBanner(banner, products)));
+  }, [banner, products]);
   const [note, setNote] = useState('');
   const preview = useImagePreview(file);
   const mobilePreview = useImagePreview(mobileFile);
@@ -828,7 +878,7 @@ export function AdminBanners() {
   if (blocked) return blocked;
   const shown = banners.filter((banner) => banner.active).length;
   return (
-    <AdminShell eyebrow="Homepage" title="Banners" lead="Use two sizes so the photo fills the frame with no empty bars. Computer: 1600 × 700 px. Phone: 1080 × 1080 px. If you skip the phone image, the computer image is used. Pick the combo whose product page opens when a customer taps the banner.">
+    <AdminShell eyebrow="Homepage" title="Banners" lead="Type the pack and price shown on the banner. Computer image: 1600 × 700 px. Phone image: 1080 × 1080 px. Link a product if a tap should open that page.">
       <form className="banner-card banner-new" onSubmit={add}>
         <div className="banner-thumb banner-sizes">
           <label className={`banner-drop ${(preview || picked?.images[0]) ? 'has-photo' : ''}`}>

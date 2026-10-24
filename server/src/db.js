@@ -231,6 +231,9 @@ export async function startDatabase() {
     ALTER TABLE banners ADD COLUMN IF NOT EXISTS product_slug TEXT NOT NULL DEFAULT '';
     ALTER TABLE banners ADD COLUMN IF NOT EXISTS variant_label TEXT NOT NULL DEFAULT '';
     ALTER TABLE banners ADD COLUMN IF NOT EXISTS mobile_image_url TEXT NOT NULL DEFAULT '';
+    ALTER TABLE banners ADD COLUMN IF NOT EXISTS pack_label TEXT NOT NULL DEFAULT '';
+    ALTER TABLE banners ADD COLUMN IF NOT EXISTS price_paise INT NOT NULL DEFAULT 0;
+    ALTER TABLE banners ADD COLUMN IF NOT EXISTS compare_paise INT NOT NULL DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS inventory_moves (
       id SERIAL PRIMARY KEY,
