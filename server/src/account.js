@@ -4,6 +4,7 @@ import rateLimit from 'express-rate-limit';
 import { getPool } from './db.js';
 import { cleanPhone, mapAddress, readAddress } from './address.js';
 import { sendMail } from './mailer.js';
+import { sendWhatsAppOtp } from './whatsapp.js';
 import { paymentKeys } from './payments.js';
 import {
   clearCustomerCookie,
@@ -40,20 +41,22 @@ function maskEmail(email) {
   return `${keep}${'•'.repeat(Math.max(1, user.length - keep.length))}${domain}`;
 }
 
-async function deliverOtp({ email, name, code }) {
-  const mail = await sendMail({
-    to: email,
-    subject: `${code} is your Jagatha Organics code`,
-    text: `Hello ${name || 'there'},\n\nYour Jagatha Organics verification code is ${code}. It works for ${OTP_MINUTES} minutes.\n\nIf you did not ask for it, ignore this email.`,
-    html: `<p>Hello ${(name || 'there').replace(/[<>&]/g, '')},</p><p>Your Jagatha Organics verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It works for ${OTP_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
-  });
-  // WhatsApp OTP can use the same code once a WhatsApp provider is connected.
+async function deliverOtp({ email, name, code, phone }) {
+  const [mail, whatsapp] = await Promise.all([
+    sendMail({
+      to: email,
+      subject: `${code} is your Jagatha Organics code`,
+      text: `Hello ${name || 'there'},\n\nYour Jagatha Organics verification code is ${code}. It works for ${OTP_MINUTES} minutes.\n\nIf you did not ask for it, ignore this email.`,
+      html: `<p>Hello ${(name || 'there').replace(/[<>&]/g, '')},</p><p>Your Jagatha Organics verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It works for ${OTP_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
+    }),
+    sendWhatsAppOtp(phone, code),
+  ]);
   if (!mail.delivered) {
     const error = new Error('We could not send the code to your email. Check the address and try again.');
     error.status = 503;
     throw error;
   }
-  return { email: true, whatsapp: false };
+  return { email: true, whatsapp: Boolean(whatsapp.sent) };
 }
 
 export function customerFrom(req) {
@@ -166,8 +169,8 @@ export function registerAccount(app) {
              expires_at = EXCLUDED.expires_at, sent_at = NOW()`,
         [email, otpHash(email, code), { name, phone, passwordHash: bcrypt.hashSync(password, 10) }, OTP_MINUTES],
       );
-      await deliverOtp({ email, name, code });
-      res.json({ sent: true, email, sentTo: maskEmail(email), delivered: true });
+      const delivered = await deliverOtp({ email, name, code, phone });
+      res.json({ sent: true, email, phone, sentTo: maskEmail(email), delivered: true, whatsapp: delivered.whatsapp });
     } catch (error) {
       if (error.status === 503) return res.status(503).json({ error: error.message });
       next(error);
@@ -248,7 +251,7 @@ export function registerAccount(app) {
              expires_at = EXCLUDED.expires_at, sent_at = NOW()`,
         [key, otpHash(key, code), { phone, name: existing?.name || name, customerId: existing?.id || null, email }, OTP_MINUTES],
       );
-      await deliverOtp({ email, name: existing?.name || name, code });
+      const delivered = await deliverOtp({ email, name: existing?.name || name, code, phone });
       res.json({
         sent: true,
         phone,
@@ -256,6 +259,7 @@ export function registerAccount(app) {
         name: existing?.name || name,
         sentTo: maskEmail(email),
         delivered: true,
+        whatsapp: delivered.whatsapp,
       });
     } catch (error) {
       if (error.status === 503) return res.status(503).json({ error: error.message });

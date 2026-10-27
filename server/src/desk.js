@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url';
 import multer from 'multer';
 import bcrypt from 'bcryptjs';
 import { getPool } from './db.js';
+import { sendOrderConfirmed } from './whatsapp.js';
 import { registerReviewDesk } from './account.js';
 import { registerProductDesk } from './products.js';
 
@@ -838,7 +839,16 @@ export function registerDesk(app, { requireStaff, allow, orderWithItems, cleanPh
         await addEvent(client, orderId, status, shipNote);
       }
       await client.query('COMMIT');
-      res.json(await orderWithItems(orderNumber));
+      const saved = await orderWithItems(orderNumber);
+      if (status === 'confirmed' && previous !== 'confirmed') {
+        sendOrderConfirmed({
+          phone: saved.phone,
+          name: saved.customerName,
+          orderNumber: saved.orderNumber,
+          totalPaise: saved.totalPaise,
+        }).catch((error) => console.error('WhatsApp order message failed:', error.message));
+      }
+      res.json(saved);
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch { /* ignore */ }
       if (error.status === 400) return res.status(400).json({ error: error.message });

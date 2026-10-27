@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
-import { OrderPanel } from './checkout.jsx';
+import { otpSentCopy, OrderPanel } from './checkout.jsx';
 import { api, clearCustomer, forgetCustomer, inr, readCustomer, saveCustomer, sourceLabel, STATUS_LABEL, when } from './api.js';
 
 function displayEmail(email) {
@@ -92,8 +92,8 @@ export function AccountLogin() {
       <form className="glass form" onSubmit={submit}>
         {verifying ? (
           <>
-            <p className="muted">Enter the 6-digit code we emailed to <b>{sent.sentTo || sent.email}</b>.</p>
-            <p className="note">Check your inbox and spam folder. After WhatsApp is connected, we can send the same code there too.</p>
+            <p className="muted">Enter the 6-digit code we sent to {otpSentCopy(sent)}.</p>
+            <p className="note">Check WhatsApp, your inbox, and spam. The same 6-digit code works in both places.</p>
             <input
               className="otp-input"
               value={code}

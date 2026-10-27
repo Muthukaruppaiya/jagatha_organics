@@ -156,8 +156,10 @@ export function AdminShell({ eyebrow, title, lead, children }) {
             <span className="avatar">{person.name.slice(0, 1)}</span>
             <span><b>{person.name}</b><small>{ROLE_LABEL[person.role]}</small></span>
           </div>
-          <button type="button" className="text" onClick={logout}>Sign out</button>
-          <Link className="shop-link" to="/shop">View shop</Link>
+          <div className="side-foot-actions">
+            <button type="button" className="text" onClick={logout}>Sign out</button>
+            <Link className="shop-link" to="/shop">View shop</Link>
+          </div>
         </div>
       </aside>
       <section className="admin-main">

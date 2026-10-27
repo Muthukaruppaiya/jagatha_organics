@@ -25,6 +25,14 @@ function cleanPhone(value) {
   return digits;
 }
 
+export function otpSentCopy(sent) {
+  const mail = sent?.sentTo ? <b>{sent.sentTo}</b> : 'your email';
+  if (sent?.whatsapp && sent?.phone) {
+    return <>{mail} and WhatsApp <b>+91 {sent.phone}</b></>;
+  }
+  return mail;
+}
+
 const PAY_METHODS = [
   { id: 'upi', label: 'UPI', hint: 'GPay, PhonePe, Paytm' },
   { id: 'card', label: 'Cards', hint: 'Visa, Mastercard, Rupay' },
@@ -416,10 +424,10 @@ export function Checkout() {
             <form className="otp-panel" onSubmit={verifyCheckoutCode}>
               <p>
                 {otpSent.exists
-                  ? <>Welcome back{otpSent.name ? `, ${otpSent.name}` : ''}. Enter the code we emailed to <b>{otpSent.sentTo}</b>.</>
-                  : <>No account uses <b>+91 {otpSent.phone}</b> yet. Enter the code we emailed to <b>{otpSent.sentTo}</b> to create one.</>}
+                  ? <>Welcome back{otpSent.name ? `, ${otpSent.name}` : ''}. Enter the code we sent to {otpSentCopy(otpSent)}.</>
+                  : <>No account uses <b>+91 {otpSent.phone}</b> yet. Enter the code we sent to {otpSentCopy(otpSent)} to create one.</>}
               </p>
-              <p className="note">Check your inbox and spam folder. After WhatsApp is connected, we can send the same code there too.</p>
+              <p className="note">Check WhatsApp, your inbox, and spam. The same 6-digit code works in both places.</p>
               <input
                 className="otp-input"
                 value={otpCode}
@@ -446,7 +454,7 @@ export function Checkout() {
             </form>
           ) : (
             <form className="otp-panel" onSubmit={(event) => { event.preventDefault(); sendCheckoutCode(); }}>
-              <p>Enter your mobile number and email. We send the verification code by email. If this number is already on file we will load that account.</p>
+              <p>Enter your mobile number and email. We send the same verification code by email and WhatsApp. If this number is already on file we will load that account.</p>
               <div className="field-grid">
                 <label className="field">
                   <input
@@ -948,8 +956,8 @@ export function Track() {
       {!account ? (
         otpSent ? (
           <form className="otp-panel glass" onSubmit={verifyCode}>
-            <p>Enter the code we emailed to <b>{otpSent.sentTo}</b> to see your orders.</p>
-            <p className="note">Check your inbox and spam folder. After WhatsApp is connected, we can send the same code there too.</p>
+            <p>Enter the code we sent to {otpSentCopy(otpSent)} to see your orders.</p>
+            <p className="note">Check WhatsApp, your inbox, and spam. The same 6-digit code works in both places.</p>
             <input
               className="otp-input"
               value={otpCode}
@@ -972,7 +980,7 @@ export function Track() {
           </form>
         ) : (
           <form className="otp-panel glass" onSubmit={sendCode}>
-            <p>Sign in with your mobile number. We email the verification code. Your ordered products will show here.</p>
+            <p>Sign in with your mobile number. We send the verification code by email and WhatsApp. Your ordered products will show here.</p>
             <label className="field">
               <input
                 value={otpPhone}

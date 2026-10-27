@@ -11,6 +11,7 @@ import bcrypt from 'bcryptjs';
 import { getPool, startDatabase, stopDatabase } from './db.js';
 import { seedDatabase } from './seed.js';
 import { addEvent, registerDesk, reserveLines, restoreLines } from './desk.js';
+import { sendOrderConfirmed } from './whatsapp.js';
 import { customerFrom, registerAccount } from './account.js';
 import { createRazorpayOrder, demoEnabled, paymentKeys, paymentMode, validSignature, validWebhook } from './payments.js';
 import { readAddress } from './address.js';
@@ -157,8 +158,18 @@ async function orderWithItems(orderNumber) {
   };
 }
 
+function notifyConfirmed(order) {
+  if (!order?.phone) return;
+  sendOrderConfirmed({
+    phone: order.phone,
+    name: order.customerName || order.customer_name,
+    orderNumber: order.orderNumber || order.order_number,
+    totalPaise: order.totalPaise ?? order.total_paise,
+  }).catch((error) => console.error('WhatsApp order message failed:', error.message));
+}
+
 async function markPaymentCaptured(client, order, paymentId, extraNote = '') {
-  if (order.payment_status === 'paid') return;
+  if (order.payment_status === 'paid') return false;
   let note = extraNote;
   if (order.status === 'cancelled') {
     const { rows: lines } = await client.query(
@@ -183,6 +194,7 @@ async function markPaymentCaptured(client, order, paymentId, extraNote = '') {
     [order.id, paymentId, note],
   );
   await addEvent(client, order.id, 'confirmed', 'Payment received');
+  return true;
 }
 
 function authLimit() {
@@ -441,9 +453,10 @@ function createApp() {
         await client.query('ROLLBACK');
         return res.status(404).json({ error: 'No test order is waiting for that number.' });
       }
-      await markPaymentCaptured(client, order, 'demo');
+      const confirmed = await markPaymentCaptured(client, order, 'demo');
       await client.query('COMMIT');
       const { adminNote, ...paid } = await orderWithItems(orderNumber);
+      if (confirmed) notifyConfirmed(paid);
       res.json(paid);
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch { /* ignore */ }
@@ -475,8 +488,15 @@ function createApp() {
           [razorpayOrderId],
         );
         const order = found.rows[0];
-        if (order) await markPaymentCaptured(client, order, paymentId);
+        const confirmed = order ? await markPaymentCaptured(client, order, paymentId) : false;
         await client.query('COMMIT');
+        if (confirmed) {
+          const paid = await getPool().query(
+            'SELECT order_number, customer_name, phone, total_paise FROM orders WHERE id = $1',
+            [order.id],
+          );
+          notifyConfirmed(paid.rows[0]);
+        }
       } catch (error) {
         try { await client.query('ROLLBACK'); } catch { /* ignore */ }
         throw error;
@@ -510,9 +530,10 @@ function createApp() {
         await client.query('ROLLBACK');
         return res.status(400).json({ error: 'We could not confirm this payment. If money was taken, message us on WhatsApp with the order number.' });
       }
-      await markPaymentCaptured(client, order, paymentId);
+      const confirmed = await markPaymentCaptured(client, order, paymentId);
       await client.query('COMMIT');
       const { adminNote, ...paid } = await orderWithItems(orderNumber);
+      if (confirmed) notifyConfirmed(paid);
       res.json(paid);
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch { /* ignore */ }

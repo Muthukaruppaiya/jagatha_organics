@@ -855,6 +855,7 @@ legend { margin-bottom: 8px; color: var(--muted); }
   position: sticky;
   top: 16px;
   height: calc(100vh - 32px);
+  overflow: hidden;
   background:
     radial-gradient(240px 160px at 20% 0%, rgba(184, 137, 74, 0.28), transparent 70%),
     linear-gradient(180deg, #243f34, #172a23);
@@ -864,23 +865,46 @@ legend { margin-bottom: 8px; color: var(--muted); }
 .admin-side .brand strong { color: #f7f3ea; }
 .admin-side .brand small { color: #e7c98a; }
 .side-label { letter-spacing: 0.16em; text-transform: uppercase; font-size: 0.68rem; color: rgba(246, 241, 231, 0.55); margin: 18px 8px 4px; }
-.admin-side nav { display: flex; flex-direction: column; gap: 4px; width: 100%; }
+.admin-side nav {
+  display: flex; flex-direction: column; gap: 2px; width: 100%;
+  flex: 1; min-height: 0; overflow-y: auto; padding-right: 2px;
+}
 .admin-side nav a {
   text-decoration: none;
   color: rgba(246, 241, 231, 0.78);
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 11px 12px;
+  padding: 9px 12px;
   border-radius: 14px;
+  flex: none;
 }
 .admin-side nav a.side-on { background: rgba(255, 255, 255, 0.12); color: #fff; box-shadow: inset 0 0 0 1px rgba(231, 201, 138, 0.5); }
 .nav-ico { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.side-foot { margin-top: auto; display: grid; gap: 8px; padding: 14px 8px 4px; border-top: 1px solid rgba(255,255,255,0.08); }
-.side-person { display: flex; gap: 10px; align-items: center; }
+.side-foot {
+  flex: none;
+  margin-top: auto;
+  display: grid;
+  gap: 8px;
+  padding: 12px 8px 0;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.side-person { display: flex; gap: 10px; align-items: center; min-width: 0; }
 .side-person b, .side-person small { display: block; }
+.side-person span:last-child { min-width: 0; }
+.side-person b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .side-person small { color: rgba(246, 241, 231, 0.62); }
-.admin-side .text, .admin-side .shop-link { color: rgba(246, 241, 231, 0.78); text-decoration: none; background: none; border: 0; padding: 0; text-align: left; }
+.side-foot-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.admin-side .text, .admin-side .shop-link {
+  color: #f7f3ea;
+  text-decoration: none;
+  background: rgba(255, 255, 255, 0.08);
+  border: 0;
+  padding: 8px 12px;
+  min-height: 36px;
+  border-radius: 10px;
+  text-align: left;
+}
 .avatar {
   width: 40px; height: 40px; border-radius: 14px;
   display: grid; place-items: center;
