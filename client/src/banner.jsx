@@ -72,11 +72,12 @@ export function HeroBanner() {
 
   if (!banners.length) return null;
   const current = index % banners.length;
+  const canStep = banners.length > 1;
   const step = (delta) => setIndex((current + delta + banners.length) % banners.length);
 
   return (
     <section
-      className="wrap banner-stage"
+      className={`wrap banner-stage${canStep ? ' steppable' : ''}`}
       aria-roledescription="carousel"
       aria-label="This month's combo offers"
       onMouseEnter={() => setPaused(true)}
@@ -100,10 +101,17 @@ export function HeroBanner() {
             aria-hidden={position !== current}
             aria-roledescription="slide"
             aria-label={`${position + 1} of ${banners.length}`}
-            onClick={combo ? (event) => { if (!event.target.closest('button, a')) order(banner); } : undefined}
+            onClick={(event) => {
+              if (event.target.closest('button, a')) return;
+              if (canStep) {
+                step(1);
+                return;
+              }
+              if (combo) order(banner);
+            }}
           >
             <div className={banner.mobileImage ? 'banner-media phone' : 'banner-media'}>
-              { !combo && banner.link
+              { !canStep && !combo && banner.link
                 ? (
                   <Link to={banner.link.startsWith('/') ? banner.link : '/shop'} aria-label={banner.buttonLabel || banner.title || 'Open offer'}>
                     <BannerArt src={banner.image} mobileSrc={banner.mobileImage} alt={banner.title || ''} />
@@ -116,6 +124,12 @@ export function HeroBanner() {
           </article>
         );
       })}
+      {canStep && (
+        <>
+          <button className="banner-arrow prev" type="button" aria-label="Previous banner" onClick={() => step(-1)}>‹</button>
+          <button className="banner-arrow next" type="button" aria-label="Next banner" onClick={() => step(1)}>›</button>
+        </>
+      )}
     </section>
   );
 }

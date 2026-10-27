@@ -1331,6 +1331,7 @@ fieldset.plain:disabled { opacity: 0.7; }
   transition: transform 0.2s ease, background 0.2s ease;
 }
 .banner-cta:hover { background: #f0d4a2; transform: translateY(-1px); }
+.banner-stage.steppable .banner-slide.on,
 .banner-slide.combo { cursor: pointer; }
 .banner-float { position: absolute; z-index: 3; right: 14px; bottom: 14px; min-height: 44px; width: auto; }
 .banner-price-tag {
@@ -1432,17 +1433,24 @@ fieldset.plain:disabled { opacity: 0.7; }
 }
 .banner-dots button.on { width: 20px; background: #e7c48a; }
 .banner-arrow {
-  width: 34px;
-  height: 34px;
+  position: absolute;
+  z-index: 4;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  margin-top: -20px;
   border: 0;
   border-radius: 50%;
   background: rgba(10, 22, 18, 0.55);
   color: #f7f3ea;
-  font-size: 1.4rem;
+  font-size: 1.7rem;
   line-height: 1;
   pointer-events: auto;
   backdrop-filter: blur(10px);
+  cursor: pointer;
 }
+.banner-arrow.prev { left: 12px; }
+.banner-arrow.next { right: 12px; }
 .banner-arrow:hover { background: rgba(10, 22, 18, 0.8); }
 .banner-card {
   display: grid;
