@@ -642,22 +642,6 @@ main { flex: 1; padding-bottom: 48px; }
   object-fit: cover;
   pointer-events: none;
 }
-.home-reel-thumbs span {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  padding: 18px 8px 8px;
-  background: linear-gradient(180deg, transparent, rgba(16, 23, 15, 0.88));
-  color: #f7f3ea;
-  font-size: 0.68rem;
-  line-height: 1.2;
-  text-align: left;
-  display: -webkit-box;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
 .home-reel-more {
   margin: 0 4px 2px;
   color: #e7c48a;

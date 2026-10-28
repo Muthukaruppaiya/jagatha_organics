@@ -101,8 +101,15 @@ export function KitchenReel() {
                 aria-label={`Play ${item.title || `clip ${index + 1}`}`}
                 onClick={() => setCurrent(index)}
               >
-                <video src={item.src} muted playsInline preload="metadata" />
-                <span>{item.title || `Clip ${index + 1}`}</span>
+                <video
+                  src={item.src}
+                  muted
+                  playsInline
+                  preload="metadata"
+                  onLoadedData={(event) => {
+                    try { event.currentTarget.currentTime = 0.8; } catch { /* ignore */ }
+                  }}
+                />
               </button>
             ))}
           </div>
