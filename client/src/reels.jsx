@@ -28,7 +28,8 @@ export function KitchenReel() {
   const [current, setCurrent] = useState(0);
   const videoRef = useRef(null);
   const boxRef = useRef(null);
-  const reel = reels[current] || reels[0];
+  const clips = reels.slice(0, 4);
+  const reel = clips[current] || clips[0];
 
   useEffect(() => {
     const node = boxRef.current;
@@ -37,15 +38,24 @@ export function KitchenReel() {
     const io = new IntersectionObserver(([entry]) => {
       if (entry.isIntersecting) video.play().catch(() => {});
       else video.pause();
-    }, { threshold: 0.35 });
+    }, { threshold: 0.25 });
     io.observe(node);
     return () => io.disconnect();
   }, [reel?.src]);
+
+  useEffect(() => {
+    if (clips.length < 2) return undefined;
+    const timer = setInterval(() => {
+      setCurrent((index) => (index + 1) % clips.length);
+    }, 9000);
+    return () => clearInterval(timer);
+  }, [clips.length, current]);
 
   if (!reel) return null;
 
   return (
     <aside className="home-reel" ref={boxRef}>
+      <p className="home-reel-kicker">From our kitchen</p>
       <div className="home-reel-frame">
         <video
           ref={videoRef}
@@ -58,15 +68,14 @@ export function KitchenReel() {
           preload="metadata"
         />
         <span className="home-reel-live">Playing</span>
+        <div className="home-reel-copy">
+          <b>{reel.title || 'Jagatha Organics'}</b>
+          <a href="https://www.instagram.com/jagathaorganics/" target="_blank" rel="noreferrer">Watch more on Instagram</a>
+        </div>
       </div>
-      <div className="home-reel-copy">
-        <p className="eyebrow">From our kitchen</p>
-        <b>{reel.title || 'Jagatha Organics'}</b>
-        <a href="https://www.instagram.com/jagathaorganics/" target="_blank" rel="noreferrer">Watch more on Instagram</a>
-      </div>
-      {reels.length > 1 && (
+      {clips.length > 1 && (
         <div className="home-reel-thumbs">
-          {reels.slice(0, 4).map((item, index) => (
+          {clips.map((item, index) => (
             <button
               key={item.id}
               type="button"
