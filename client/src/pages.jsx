@@ -5,6 +5,7 @@ import { useCart } from './cart.jsx';
 import { HeroBanner } from './banner.jsx';
 import { KitchenReel } from './reels.jsx';
 import { PriceDetails } from './checkout.jsx';
+import { SocialHighlights } from './layout.jsx';
 
 function useCatalog() {
   const [products, setProducts] = useState([]);
@@ -491,7 +492,10 @@ export function Contact() {
         <p><span>WhatsApp</span><a href="https://wa.me/919884126032" target="_blank" rel="noreferrer">Message Jagatha</a></p>
         <p><span>Email</span><a href="mailto:jagathaorganics@gmail.com">jagathaorganics@gmail.com</a></p>
         <p><span>Address</span><b>Pallikaranai, Chennai 600100</b></p>
-        <p><span>Instagram</span><a href="https://www.instagram.com/jagathaorganics/" target="_blank" rel="noreferrer">@jagathaorganics</a></p>
+        <div className="contact-social">
+          <span>Follow us</span>
+          <SocialHighlights />
+        </div>
       </div>
     </div>
   );

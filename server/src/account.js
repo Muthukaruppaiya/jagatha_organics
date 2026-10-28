@@ -41,22 +41,40 @@ function maskEmail(email) {
   return `${keep}${'•'.repeat(Math.max(1, user.length - keep.length))}${domain}`;
 }
 
+function phoneKey(phone) {
+  return `phone:${phone}`;
+}
+
+function readEmail(value) {
+  const email = clip(value, 120).toLowerCase();
+  return isRealEmail(email) ? email : '';
+}
+
+function accountEmailValue(phone, email) {
+  return readEmail(email) || `${phone}@phone.jagathaorganics.com`;
+}
+
 async function deliverOtp({ email, name, code, phone }) {
+  const real = isRealEmail(email);
   const [mail, whatsapp] = await Promise.all([
-    sendMail({
-      to: email,
-      subject: `${code} is your Jagatha Organics code`,
-      text: `Hello ${name || 'there'},\n\nYour Jagatha Organics verification code is ${code}. It works for ${OTP_MINUTES} minutes.\n\nIf you did not ask for it, ignore this email.`,
-      html: `<p>Hello ${(name || 'there').replace(/[<>&]/g, '')},</p><p>Your Jagatha Organics verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It works for ${OTP_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
-    }),
+    real
+      ? sendMail({
+        to: email,
+        subject: `${code} is your Jagatha Organics code`,
+        text: `Hello ${name || 'there'},\n\nYour Jagatha Organics verification code is ${code}. It works for ${OTP_MINUTES} minutes.\n\nIf you did not ask for it, ignore this email.`,
+        html: `<p>Hello ${(name || 'there').replace(/[<>&]/g, '')},</p><p>Your Jagatha Organics verification code is</p><p style="font-size:28px;font-weight:700;letter-spacing:6px">${code}</p><p>It works for ${OTP_MINUTES} minutes. If you did not ask for it, ignore this email.</p>`,
+      })
+      : Promise.resolve({ delivered: false, skipped: true }),
     sendWhatsAppOtp(phone, code),
   ]);
-  if (!mail.delivered) {
-    const error = new Error('We could not send the code to your email. Check the address and try again.');
-    error.status = 503;
-    throw error;
+  if (whatsapp.sent || mail.delivered) {
+    return { email: Boolean(mail.delivered), whatsapp: Boolean(whatsapp.sent) };
   }
-  return { email: true, whatsapp: Boolean(whatsapp.sent) };
+  const error = new Error(real
+    ? 'We could not send the code. Check the mobile number or email and try again.'
+    : 'We could not send the WhatsApp code. Add an email so we can send it there, or try again.');
+  error.status = 503;
+  throw error;
 }
 
 export function customerFrom(req) {
@@ -144,19 +162,25 @@ export function registerAccount(app) {
   app.post('/api/account/register/start', otpLimit, async (req, res, next) => {
     try {
       const name = clip(req.body?.name, 80);
-      const email = clip(req.body?.email, 120).toLowerCase();
+      const givenEmail = clip(req.body?.email, 120).toLowerCase();
+      const email = readEmail(givenEmail);
       const phone = cleanPhone(req.body?.phone);
       const password = String(req.body?.password || '');
       if (name.length < 2) return res.status(400).json({ error: 'Enter your name.' });
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Enter a valid email.' });
       if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a 10-digit mobile number.' });
+      if (givenEmail && !email) return res.status(400).json({ error: 'Enter a valid email, or leave it blank.' });
       if (password.length < 8) return res.status(400).json({ error: 'Use a password of at least 8 characters.' });
 
-      const taken = await getPool().query('SELECT 1 FROM customers WHERE email = $1', [email]);
-      if (taken.rows[0]) return res.status(409).json({ error: 'An account already uses that email. Sign in instead.' });
+      const takenPhone = await getPool().query('SELECT 1 FROM customers WHERE phone = $1', [phone]);
+      if (takenPhone.rows[0]) return res.status(409).json({ error: 'An account already uses that mobile number. Sign in instead.' });
+      if (email) {
+        const takenMail = await getPool().query('SELECT 1 FROM customers WHERE lower(email) = $1', [email]);
+        if (takenMail.rows[0]) return res.status(409).json({ error: 'An account already uses that email. Sign in instead.' });
+      }
+      const key = phoneKey(phone);
       const recent = await getPool().query(
         `SELECT 1 FROM otp_codes WHERE email = $1 AND sent_at > NOW() - make_interval(secs => $2)`,
-        [email, OTP_RESEND_SECONDS],
+        [key, OTP_RESEND_SECONDS],
       );
       if (recent.rows[0]) return res.status(429).json({ error: `Please wait ${OTP_RESEND_SECONDS} seconds before asking for a new code.` });
 
@@ -167,10 +191,17 @@ export function registerAccount(app) {
          ON CONFLICT (email) DO UPDATE
          SET code_hash = EXCLUDED.code_hash, payload = EXCLUDED.payload, attempts = 0,
              expires_at = EXCLUDED.expires_at, sent_at = NOW()`,
-        [email, otpHash(email, code), { name, phone, passwordHash: bcrypt.hashSync(password, 10) }, OTP_MINUTES],
+        [key, otpHash(key, code), { name, phone, email, passwordHash: bcrypt.hashSync(password, 10) }, OTP_MINUTES],
       );
       const delivered = await deliverOtp({ email, name, code, phone });
-      res.json({ sent: true, email, phone, sentTo: maskEmail(email), delivered: true, whatsapp: delivered.whatsapp });
+      res.json({
+        sent: true,
+        email,
+        phone,
+        sentTo: email ? maskEmail(email) : '',
+        delivered: true,
+        whatsapp: delivered.whatsapp,
+      });
     } catch (error) {
       if (error.status === 503) return res.status(503).json({ error: error.message });
       next(error);
@@ -180,10 +211,11 @@ export function registerAccount(app) {
   app.post('/api/account/register/verify', otpLimit, async (req, res, next) => {
     const client = await getPool().connect();
     try {
-      const email = clip(req.body?.email, 120).toLowerCase();
+      const phone = cleanPhone(req.body?.phone);
       const code = String(req.body?.code || '').replace(/\D/g, '');
+      const key = phoneKey(phone);
       await client.query('BEGIN');
-      const { rows } = await client.query('SELECT * FROM otp_codes WHERE email = $1 FOR UPDATE', [email]);
+      const { rows } = await client.query('SELECT * FROM otp_codes WHERE email = $1 FOR UPDATE', [key]);
       const row = rows[0];
       if (!row || new Date(row.expires_at) < new Date()) {
         await client.query('ROLLBACK');
@@ -194,23 +226,23 @@ export function registerAccount(app) {
         return res.status(429).json({ error: 'Too many tries. Ask for a new code.' });
       }
       const expected = Buffer.from(row.code_hash);
-      const given = Buffer.from(otpHash(email, code));
+      const given = Buffer.from(otpHash(key, code));
       if (code.length !== 6 || expected.length !== given.length || !crypto.timingSafeEqual(expected, given)) {
-        await client.query('UPDATE otp_codes SET attempts = attempts + 1 WHERE email = $1', [email]);
+        await client.query('UPDATE otp_codes SET attempts = attempts + 1 WHERE email = $1', [key]);
         await client.query('COMMIT');
-        return res.status(400).json({ error: 'That code is not right. Check the email and try again.' });
+        return res.status(400).json({ error: 'That code is not right. Check the code and try again.' });
       }
-      const { name, phone, passwordHash } = row.payload;
+      const { name, email, passwordHash } = row.payload;
       const inserted = await client.query(
         `INSERT INTO customers (name, email, phone, password_hash) VALUES ($1, $2, $3, $4) RETURNING id, name, email, phone`,
-        [name, email, phone, passwordHash],
+        [name, accountEmailValue(phone, email), phone, passwordHash],
       );
-      await client.query('DELETE FROM otp_codes WHERE email = $1', [email]);
+      await client.query('DELETE FROM otp_codes WHERE email = $1', [key]);
       await client.query('COMMIT');
       res.status(201).json(signCustomer(res, inserted.rows[0]));
     } catch (error) {
       try { await client.query('ROLLBACK'); } catch { /* ignore */ }
-      if (error.code === '23505') return res.status(409).json({ error: 'An account already uses that email. Sign in instead.' });
+      if (error.code === '23505') return res.status(409).json({ error: 'An account already uses that mobile number. Sign in instead.' });
       next(error);
     } finally {
       client.release();
@@ -221,9 +253,12 @@ export function registerAccount(app) {
     try {
       const phone = cleanPhone(req.body?.phone);
       const name = clip(req.body?.name, 80);
-      const givenEmail = clip(req.body?.email, 120).toLowerCase();
+      const givenEmail = readEmail(req.body?.email);
+      if (clip(req.body?.email, 120) && !givenEmail) {
+        return res.status(400).json({ error: 'Enter a valid email, or leave it blank.' });
+      }
       if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a 10-digit mobile number.' });
-      const key = `phone:${phone}`;
+      const key = phoneKey(phone);
       const recent = await getPool().query(
         `SELECT 1 FROM otp_codes WHERE email = $1 AND sent_at > NOW() - make_interval(secs => $2)`,
         [key, OTP_RESEND_SECONDS],
@@ -239,9 +274,6 @@ export function registerAccount(app) {
       }
       if (!existing && name.length < 2) return res.status(400).json({ error: 'Enter your name to create an account.' });
       const email = isRealEmail(existing?.email) ? existing.email : givenEmail;
-      if (!isRealEmail(email)) {
-        return res.status(400).json({ error: 'Enter the email where we should send the verification code.' });
-      }
       const code = String(crypto.randomInt(100000, 1000000));
       await getPool().query(
         `INSERT INTO otp_codes (email, code_hash, payload, attempts, expires_at, sent_at)
@@ -257,7 +289,7 @@ export function registerAccount(app) {
         phone,
         exists: Boolean(existing),
         name: existing?.name || name,
-        sentTo: maskEmail(email),
+        sentTo: email ? maskEmail(email) : '',
         delivered: true,
         whatsapp: delivered.whatsapp,
       });
@@ -273,7 +305,7 @@ export function registerAccount(app) {
       const phone = cleanPhone(req.body?.phone);
       const code = String(req.body?.code || '').replace(/\D/g, '');
       const name = clip(req.body?.name, 80);
-      const key = `phone:${phone}`;
+      const key = phoneKey(phone);
       await client.query('BEGIN');
       const { rows } = await client.query('SELECT * FROM otp_codes WHERE email = $1 FOR UPDATE', [key]);
       const row = rows[0];
@@ -319,7 +351,7 @@ export function registerAccount(app) {
           await client.query('ROLLBACK');
           return res.status(400).json({ error: 'Enter your name to create an account.' });
         }
-        const email = isRealEmail(row.payload.email) ? row.payload.email : `${phone}@phone.jagathaorganics.com`;
+        const email = accountEmailValue(phone, row.payload.email);
         const inserted = await client.query(
           `INSERT INTO customers (name, email, phone, password_hash)
            VALUES ($1, $2, $3, $4)
@@ -416,13 +448,15 @@ export function registerAccount(app) {
 
   app.post('/api/account/login', otpLimit, async (req, res, next) => {
     try {
-      const email = clip(req.body?.email, 120).toLowerCase();
+      const phone = cleanPhone(req.body?.phone);
       const password = String(req.body?.password || '');
-      const { rows } = await getPool().query('SELECT id, name, email, phone, password_hash FROM customers WHERE email = $1', [email]);
-      const row = rows[0];
-      if (!row || !bcrypt.compareSync(password, row.password_hash)) {
-        return res.status(401).json({ error: 'Those sign-in details do not match.' });
-      }
+      if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a 10-digit mobile number.' });
+      const { rows } = await getPool().query(
+        'SELECT id, name, email, phone, password_hash FROM customers WHERE phone = $1 ORDER BY id',
+        [phone],
+      );
+      const row = rows.find((item) => item.password_hash && bcrypt.compareSync(password, item.password_hash));
+      if (!row) return res.status(401).json({ error: 'Those sign-in details do not match.' });
       res.json(signCustomer(res, row));
     } catch (error) {
       next(error);

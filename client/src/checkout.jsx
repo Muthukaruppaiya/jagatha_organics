@@ -26,11 +26,12 @@ function cleanPhone(value) {
 }
 
 export function otpSentCopy(sent) {
-  const mail = sent?.sentTo ? <b>{sent.sentTo}</b> : 'your email';
-  if (sent?.whatsapp && sent?.phone) {
-    return <>{mail} and WhatsApp <b>+91 {sent.phone}</b></>;
-  }
-  return mail;
+  const mail = sent?.sentTo ? <>email <b>{sent.sentTo}</b></> : null;
+  const whatsapp = sent?.whatsapp && sent?.phone ? <>WhatsApp <b>+91 {sent.phone}</b></> : null;
+  if (mail && whatsapp) return <>{mail} and {whatsapp}</>;
+  if (whatsapp) return whatsapp;
+  if (mail) return mail;
+  return 'your mobile number';
 }
 
 const PAY_METHODS = [
@@ -427,7 +428,7 @@ export function Checkout() {
                   ? <>Welcome back{otpSent.name ? `, ${otpSent.name}` : ''}. Enter the code we sent to {otpSentCopy(otpSent)}.</>
                   : <>No account uses <b>+91 {otpSent.phone}</b> yet. Enter the code we sent to {otpSentCopy(otpSent)} to create one.</>}
               </p>
-              <p className="note">Check WhatsApp, your inbox, and spam. The same 6-digit code works in both places.</p>
+              <p className="note">Check WhatsApp{otpSent?.sentTo ? ', your inbox, and spam. The same 6-digit code works in both places' : ''}.</p>
               <input
                 className="otp-input"
                 value={otpCode}
@@ -454,7 +455,7 @@ export function Checkout() {
             </form>
           ) : (
             <form className="otp-panel" onSubmit={(event) => { event.preventDefault(); sendCheckoutCode(); }}>
-              <p>Enter your mobile number and email. We send the same verification code by email and WhatsApp. If this number is already on file we will load that account.</p>
+              <p>Enter your mobile number. We send a verification code on WhatsApp. Email is optional. If this number is already on file we will load that account.</p>
               <div className="field-grid">
                 <label className="field">
                   <input
@@ -487,14 +488,13 @@ export function Checkout() {
                     onChange={(event) => setOtpEmail(event.target.value)}
                     placeholder=" "
                     autoComplete="email"
-                    required
                   />
-                  <span>Email for the verification code</span>
+                  <span>Email (optional)</span>
                 </label>
               </div>
               {error && <p className="status error">{error}</p>}
               <div className="step-actions">
-                <button className="btn step-cta" type="submit" disabled={busy || otpPhone.length !== 10 || otpName.trim().length < 2 || !otpEmail.includes('@')}>
+                <button className="btn step-cta" type="submit" disabled={busy || otpPhone.length !== 10 || otpName.trim().length < 2}>
                   {busy ? 'Sending…' : 'Send verification code'}
                 </button>
               </div>
@@ -957,7 +957,7 @@ export function Track() {
         otpSent ? (
           <form className="otp-panel glass" onSubmit={verifyCode}>
             <p>Enter the code we sent to {otpSentCopy(otpSent)} to see your orders.</p>
-            <p className="note">Check WhatsApp, your inbox, and spam. The same 6-digit code works in both places.</p>
+            <p className="note">Check WhatsApp{otpSent?.sentTo ? ', your inbox, and spam. The same 6-digit code works in both places' : ''}.</p>
             <input
               className="otp-input"
               value={otpCode}
@@ -980,7 +980,7 @@ export function Track() {
           </form>
         ) : (
           <form className="otp-panel glass" onSubmit={sendCode}>
-            <p>Sign in with your mobile number. We send the verification code by email and WhatsApp. Your ordered products will show here.</p>
+            <p>Sign in with your mobile number. We send the verification code on WhatsApp. Email is optional. Your ordered products will show here.</p>
             <label className="field">
               <input
                 value={otpPhone}
@@ -1003,7 +1003,7 @@ export function Track() {
                 placeholder=" "
                 autoComplete="email"
               />
-              <span>Email if it is not already on your account</span>
+              <span>Email (optional)</span>
             </label>
             {error && <p className="status error">{error}</p>}
             <button className="btn" type="submit" disabled={busy || otpPhone.length !== 10}>{busy ? 'Checking…' : 'Continue'}</button>

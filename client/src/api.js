@@ -139,10 +139,10 @@ export const api = {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   }),
-  registerVerify: (email, code) => request('/api/account/register/verify', {
+  registerVerify: (phone, code) => request('/api/account/register/verify', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, code }),
+    body: JSON.stringify({ phone, code }),
   }),
   accountMe: () => request('/api/account/me', { headers: customerHeaders() }),
   accountLogout: () => request('/api/account/logout', { method: 'POST', headers: customerHeaders() }),
@@ -165,10 +165,10 @@ export const api = {
     body: JSON.stringify(body),
   }),
   removeAddress: (id) => request(`/api/account/addresses/${id}`, { method: 'DELETE', headers: customerHeaders() }),
-  accountLogin: (email, password) => request('/api/account/login', {
+  accountLogin: (phone, password) => request('/api/account/login', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    body: JSON.stringify({ phone, password }),
   }),
   myOrders: () => request('/api/account/orders', { headers: customerHeaders() }),
   favorites: () => request('/api/account/favorites', { headers: customerHeaders() }),

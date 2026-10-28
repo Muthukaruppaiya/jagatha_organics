@@ -52,12 +52,12 @@ export function AccountLogin() {
     setError('');
     try {
       if (mode === 'login') {
-        saveCustomer(await api.accountLogin(form.email, form.password));
+        saveCustomer(await api.accountLogin(form.phone, form.password));
         navigate('/account');
       } else if (!sent) {
         await sendCode();
       } else {
-        saveCustomer(await api.registerVerify(sent.email, code));
+        saveCustomer(await api.registerVerify(sent.phone || form.phone, code));
         navigate('/account');
       }
     } catch (err) {
@@ -88,12 +88,12 @@ export function AccountLogin() {
   const verifying = mode === 'register' && sent;
   return (
     <div className="wrap page narrow auth">
-      <h1>{mode === 'login' ? 'Sign in' : verifying ? 'Verify your email' : 'Create account'}</h1>
+      <h1>{mode === 'login' ? 'Sign in' : verifying ? 'Verify your mobile' : 'Create account'}</h1>
       <form className="glass form" onSubmit={submit}>
         {verifying ? (
           <>
             <p className="muted">Enter the 6-digit code we sent to {otpSentCopy(sent)}.</p>
-            <p className="note">Check WhatsApp, your inbox, and spam. The same 6-digit code works in both places.</p>
+            <p className="note">Check WhatsApp{sent?.sentTo ? ', your inbox, and spam. The same 6-digit code works in both places' : ''}.</p>
             <input
               className="otp-input"
               value={code}
@@ -109,18 +109,18 @@ export function AccountLogin() {
             <button className="btn" type="submit" disabled={busy || code.length !== 6}>{busy ? 'Checking…' : 'Verify and create account'}</button>
             <div className="otp-links">
               <button className="text-btn" type="button" onClick={resend} disabled={busy || wait > 0}>{wait > 0 ? `Resend code in ${wait}s` : 'Resend code'}</button>
-              <button className="text-btn" type="button" onClick={() => { setSent(null); setError(''); }}>Change email</button>
+              <button className="text-btn" type="button" onClick={() => { setSent(null); setError(''); }}>Change number</button>
             </div>
           </>
         ) : (
           <>
             {mode === 'register' && (
-              <>
-                <label>Name<input value={form.name} onChange={(event) => set('name', event.target.value)} required autoComplete="name" /></label>
-                <label>Mobile<input value={form.phone} onChange={(event) => set('phone', event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="tel" required autoComplete="tel-national" /></label>
-              </>
+              <label>Name<input value={form.name} onChange={(event) => set('name', event.target.value)} required autoComplete="name" /></label>
             )}
-            <label>Email<input type="email" value={form.email} onChange={(event) => set('email', event.target.value)} required autoComplete="email" /></label>
+            <label>Mobile<input value={form.phone} onChange={(event) => set('phone', event.target.value.replace(/\D/g, '').slice(0, 10))} inputMode="tel" required autoComplete="tel-national" minLength={10} maxLength={10} /></label>
+            {mode === 'register' && (
+              <label>Email (optional)<input type="email" value={form.email} onChange={(event) => set('email', event.target.value)} autoComplete="email" /></label>
+            )}
             <label>Password<input type="password" value={form.password} onChange={(event) => set('password', event.target.value)} minLength={8} required autoComplete={mode === 'login' ? 'current-password' : 'new-password'} /></label>
             {error && <p className="status error">{error}</p>}
             <button className="btn" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Send verification code'}</button>
@@ -138,7 +138,7 @@ export function AccountHome() {
   const navigate = useNavigate();
   const [customer, setCustomer] = useState(() => readCustomer());
   const [ready, setReady] = useState(Boolean(readCustomer()?.id));
-  const customerKey = customer?.email || '';
+  const customerKey = customer?.phone || customer?.id || '';
   const [orders, setOrders] = useState([]);
   const [favorites, setFavorites] = useState([]);
   const [reviews, setReviews] = useState([]);
