@@ -62,19 +62,17 @@ main { flex: 1; padding-bottom: 48px; }
 .nav-social { display: flex; align-items: center; margin-right: 4px; }
 .social-highlights { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .social-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  min-height: 42px;
-  padding: 0 14px;
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
   border-radius: 999px;
   color: #fff;
   text-decoration: none;
-  font-weight: 560;
-  letter-spacing: 0.01em;
 }
-.social-btn svg { width: 18px; height: 18px; display: block; }
+.social-btn svg { width: 16px; height: 16px; display: block; }
+.social-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .social-btn.instagram {
   background: linear-gradient(135deg, #f58529 0%, #dd2a7b 48%, #8134af 100%);
   box-shadow: 0 10px 22px rgba(221, 42, 123, 0.28);
@@ -88,12 +86,6 @@ main { flex: 1; padding-bottom: 48px; }
   box-shadow: 0 10px 22px rgba(255, 0, 0, 0.26);
 }
 .social-btn:hover { color: #fff; transform: translateY(-1px); }
-.social-highlights.compact .social-btn {
-  width: 42px;
-  height: 42px;
-  padding: 0;
-}
-.social-highlights.compact .social-btn span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 .links .social-highlights { margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(31, 61, 50, 0.1); }
 .nav .social-btn.instagram,
 .nav .social-btn.instagram:hover,

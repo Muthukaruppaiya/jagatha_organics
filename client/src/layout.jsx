@@ -59,9 +59,9 @@ function SocialMark({ id }) {
   );
 }
 
-export function SocialHighlights({ compact = false }) {
+export function SocialHighlights() {
   return (
-    <div className={compact ? 'social-highlights compact' : 'social-highlights'}>
+    <div className="social-highlights">
       {SOCIAL.map((item) => (
         <a
           key={item.id}
@@ -152,7 +152,7 @@ export function StoreLayout() {
           </Link>
           <div className="nav-actions">
             <div className="nav-social">
-              <SocialHighlights compact />
+              <SocialHighlights />
             </div>
             <button
               className={searching ? 'icon-btn on' : 'icon-btn'}
