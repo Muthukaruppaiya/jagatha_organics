@@ -8,10 +8,16 @@ function displayEmail(email) {
   return value.endsWith('@phone.jagathaorganics.com') ? '' : value;
 }
 
+function formatPhone(phone) {
+  const digits = String(phone || '').replace(/\D/g, '').slice(-10);
+  if (digits.length !== 10) return phone || '';
+  return `+91 ${digits.slice(0, 5)} ${digits.slice(5)}`;
+}
+
 export function AccountLogin() {
   const navigate = useNavigate();
   const [mode, setMode] = useState('login');
-  const [form, setForm] = useState({ name: '', email: '', phone: '', password: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '' });
   const [code, setCode] = useState('');
   const [sent, setSent] = useState(null);
   const [wait, setWait] = useState(0);
@@ -40,7 +46,9 @@ export function AccountLogin() {
   }
 
   async function sendCode() {
-    const result = await api.registerStart(form);
+    const result = mode === 'login'
+      ? await api.startCheckoutOtp({ phone: form.phone, lookup: true, login: true })
+      : await api.registerStart({ name: form.name, phone: form.phone, email: form.email });
     setSent(result);
     setCode('');
     setWait(30);
@@ -51,11 +59,11 @@ export function AccountLogin() {
     setBusy(true);
     setError('');
     try {
-      if (mode === 'login') {
-        saveCustomer(await api.accountLogin(form.phone, form.password));
-        navigate('/account');
-      } else if (!sent) {
+      if (!sent) {
         await sendCode();
+      } else if (mode === 'login') {
+        saveCustomer(await api.verifyCheckoutOtp({ phone: form.phone, code }));
+        navigate('/account');
       } else {
         saveCustomer(await api.registerVerify(sent.phone || form.phone, code));
         navigate('/account');
@@ -82,13 +90,14 @@ export function AccountLogin() {
   function switchMode() {
     setMode(mode === 'login' ? 'register' : 'login');
     setSent(null);
+    setCode('');
     setError('');
   }
 
-  const verifying = mode === 'register' && sent;
+  const verifying = Boolean(sent);
   return (
     <div className="wrap page narrow auth">
-      <h1>{mode === 'login' ? 'Sign in' : verifying ? 'Verify your mobile' : 'Create account'}</h1>
+      <h1>{verifying ? 'Enter OTP' : mode === 'login' ? 'Sign in' : 'Create account'}</h1>
       <form className="glass form" onSubmit={submit}>
         {verifying ? (
           <>
@@ -106,7 +115,9 @@ export function AccountLogin() {
               required
             />
             {error && <p className="status error">{error}</p>}
-            <button className="btn" type="submit" disabled={busy || code.length !== 6}>{busy ? 'Checking…' : 'Verify and create account'}</button>
+            <button className="btn" type="submit" disabled={busy || code.length !== 6}>
+              {busy ? 'Checking…' : mode === 'login' ? 'Verify and sign in' : 'Verify and create account'}
+            </button>
             <div className="otp-links">
               <button className="text-btn" type="button" onClick={resend} disabled={busy || wait > 0}>{wait > 0 ? `Resend code in ${wait}s` : 'Resend code'}</button>
               <button className="text-btn" type="button" onClick={() => { setSent(null); setError(''); }}>Change number</button>
@@ -114,6 +125,7 @@ export function AccountLogin() {
           </>
         ) : (
           <>
+            <p className="muted">{mode === 'login' ? 'We will send a one-time code to this mobile number.' : 'We will send a one-time code on WhatsApp. Email is optional.'}</p>
             {mode === 'register' && (
               <label>Name<input value={form.name} onChange={(event) => set('name', event.target.value)} required autoComplete="name" /></label>
             )}
@@ -121,9 +133,8 @@ export function AccountLogin() {
             {mode === 'register' && (
               <label>Email (optional)<input type="email" value={form.email} onChange={(event) => set('email', event.target.value)} autoComplete="email" /></label>
             )}
-            <label>Password<input type="password" value={form.password} onChange={(event) => set('password', event.target.value)} minLength={8} required autoComplete={mode === 'login' ? 'current-password' : 'new-password'} /></label>
             {error && <p className="status error">{error}</p>}
-            <button className="btn" type="submit" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Send verification code'}</button>
+            <button className="btn" type="submit" disabled={busy || form.phone.length !== 10}>{busy ? 'Sending…' : 'Send OTP'}</button>
           </>
         )}
         <button className="text" type="button" onClick={switchMode}>
@@ -222,18 +233,30 @@ export function AccountHome() {
 
   return (
     <div className="wrap page">
-      <div className="page-intro">
+      <section className="glass account-hero">
         <p className="eyebrow">Account</p>
         <h1>{customer.name}</h1>
-        <p>{[mail, customer.phone].filter(Boolean).join(' · ')}</p>
-        <button className="text" type="button" onClick={logout}>Sign out</button>
-      </div>
+        <p className="account-meta">
+          <a href={`tel:+91${String(customer.phone || '').replace(/\D/g, '').slice(-10)}`}>{formatPhone(customer.phone)}</a>
+          {mail ? <span> · {mail}</span> : null}
+        </p>
+        <div className="account-actions">
+          <Link className="btn" to="/shop">Shop now</Link>
+          <Link className="btn ghost" to="/track">Track order</Link>
+          <button className="text" type="button" onClick={logout}>Sign out</button>
+        </div>
+      </section>
       {error && <p className="status error">{error}</p>}
       <div className="account-grid">
         <section className="glass summary account-orders">
           <h2>Last orders</h2>
           <p className="muted">Tap an order to see packing progress, courier details, and the delivery address.</p>
-          {orders.length === 0 && <p className="muted">No orders yet. The shelf is open.</p>}
+          {orders.length === 0 && (
+            <div className="account-empty">
+              <p className="muted">No orders yet. The shelf is open.</p>
+              <Link className="btn" to="/shop">Browse products</Link>
+            </div>
+          )}
           {orders.map((order) => {
             const open = openOrder === order.orderNumber;
             return (
@@ -258,7 +281,12 @@ export function AccountHome() {
         </section>
         <section className="glass summary">
           <h2>Favourites</h2>
-          {favorites.length === 0 && <p className="muted">Save a pack from its product page.</p>}
+          {favorites.length === 0 && (
+            <div className="account-empty">
+              <p className="muted">Save a pack from its product page.</p>
+              <Link className="btn ghost" to="/shop">Find a pack</Link>
+            </div>
+          )}
           {favorites.map((item) => (
             <p key={item.slug} className="fav-row">
               {item.image && <img src={item.image} alt="" />}

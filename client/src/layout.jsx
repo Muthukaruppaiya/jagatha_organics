@@ -30,6 +30,11 @@ const SOCIAL = [
     label: 'Facebook',
     href: 'https://www.facebook.com/p/Jagatha-Organics-61572639235376/',
   },
+  {
+    id: 'youtube',
+    label: 'YouTube',
+    href: 'https://youtube.com/@jagathaorganics',
+  },
 ];
 
 function SocialMark({ id }) {
@@ -37,6 +42,13 @@ function SocialMark({ id }) {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
         <path fill="currentColor" d="M14 8.2h2.7V5h-2.8c-2.5 0-4.2 1.7-4.2 4.4V12H7.5v3.3H9.7V22h3.5v-6.7h2.8l.5-3.3h-3.3V9.6c0-.8.4-1.4 1.3-1.4z" />
+      </svg>
+    );
+  }
+  if (id === 'youtube') {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path fill="currentColor" d="M23 8.2a3.2 3.2 0 0 0-2.2-2.3C18.9 5.5 12 5.5 12 5.5s-6.9 0-8.8.4A3.2 3.2 0 0 0 1 8.2 33 33 0 0 0 .5 12a33 33 0 0 0 .5 3.8 3.2 3.2 0 0 0 2.2 2.3c1.9.4 8.8.4 8.8.4s6.9 0 8.8-.4A3.2 3.2 0 0 0 23 15.8 33 33 0 0 0 23.5 12 33 33 0 0 0 23 8.2zM9.8 15.5v-7l6.2 3.5z" />
       </svg>
     );
   }

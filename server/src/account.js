@@ -165,11 +165,10 @@ export function registerAccount(app) {
       const givenEmail = clip(req.body?.email, 120).toLowerCase();
       const email = readEmail(givenEmail);
       const phone = cleanPhone(req.body?.phone);
-      const password = String(req.body?.password || '');
       if (name.length < 2) return res.status(400).json({ error: 'Enter your name.' });
       if (!/^\d{10}$/.test(phone)) return res.status(400).json({ error: 'Enter a 10-digit mobile number.' });
       if (givenEmail && !email) return res.status(400).json({ error: 'Enter a valid email, or leave it blank.' });
-      if (password.length < 8) return res.status(400).json({ error: 'Use a password of at least 8 characters.' });
+      const passwordHash = bcrypt.hashSync(crypto.randomBytes(12).toString('hex'), 10);
 
       const takenPhone = await getPool().query('SELECT 1 FROM customers WHERE phone = $1', [phone]);
       if (takenPhone.rows[0]) return res.status(409).json({ error: 'An account already uses that mobile number. Sign in instead.' });
@@ -191,7 +190,7 @@ export function registerAccount(app) {
          ON CONFLICT (email) DO UPDATE
          SET code_hash = EXCLUDED.code_hash, payload = EXCLUDED.payload, attempts = 0,
              expires_at = EXCLUDED.expires_at, sent_at = NOW()`,
-        [key, otpHash(key, code), { name, phone, email, passwordHash: bcrypt.hashSync(password, 10) }, OTP_MINUTES],
+        [key, otpHash(key, code), { name, phone, email, passwordHash }, OTP_MINUTES],
       );
       const delivered = await deliverOtp({ email, name, code, phone });
       res.json({
@@ -270,7 +269,11 @@ export function registerAccount(app) {
       );
       const existing = found.rows[0];
       if (!existing && req.body?.lookup) {
-        return res.status(404).json({ error: 'No orders for that mobile number yet.' });
+        return res.status(404).json({
+          error: req.body?.login
+            ? 'No account for that mobile number. Create an account.'
+            : 'No orders for that mobile number yet.',
+        });
       }
       if (!existing && name.length < 2) return res.status(400).json({ error: 'Enter your name to create an account.' });
       const email = isRealEmail(existing?.email) ? existing.email : givenEmail;
