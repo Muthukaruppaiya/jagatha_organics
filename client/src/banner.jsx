@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { api, inr } from './api.js';
 
 const SLIDE_MS = 5000;
@@ -13,12 +13,6 @@ function BannerArt({ src, mobileSrc, alt = '' }) {
   );
 }
 
-function BannerButton({ banner }) {
-  if (!banner.link || !banner.buttonLabel) return null;
-  if (banner.link.startsWith('/')) return <Link className="btn banner-cta banner-float" to={banner.link}>{banner.buttonLabel}</Link>;
-  return <a className="btn banner-cta banner-float" href={banner.link} target="_blank" rel="noreferrer">{banner.buttonLabel}</a>;
-}
-
 function bannerOffer(banner) {
   const pricePaise = banner.pricePaise || banner.product?.pricePaise || 0;
   const comparePaise = banner.comparePaise || banner.product?.comparePaise || 0;
@@ -28,17 +22,23 @@ function bannerOffer(banner) {
   };
 }
 
-function PriceMark({ banner, onOrder }) {
+function bannerHref(banner) {
+  if (banner.product?.slug) return `/product/${banner.product.slug}`;
+  if (banner.link?.startsWith('/')) return banner.link;
+  return '/shop';
+}
+
+function PriceMark({ banner }) {
   const { pricePaise, comparePaise } = bannerOffer(banner);
   if (!pricePaise) return null;
   return (
-    <button className="banner-price-tag" type="button" onClick={onOrder} aria-label={`Buy for ${inr(pricePaise)}`}>
+    <span className="banner-price-tag">
       <em>₹</em>
       <span>
         <strong>{Math.round(pricePaise / 100).toLocaleString('en-IN')}</strong>
         {comparePaise > 0 && <s>{inr(comparePaise)}</s>}
       </span>
-    </button>
+    </span>
   );
 }
 
@@ -47,7 +47,7 @@ export function HeroBanner() {
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const touchX = useRef(null);
-  const navigate = useNavigate();
+  const swiped = useRef(false);
 
   useEffect(() => {
     let live = true;
@@ -61,15 +61,6 @@ export function HeroBanner() {
     return () => window.clearTimeout(timer);
   }, [index, banners.length, paused]);
 
-  function order(banner) {
-    const slug = banner.product?.slug;
-    if (slug) {
-      navigate(`/product/${slug}`);
-      return;
-    }
-    if (banner.link?.startsWith('/')) navigate(banner.link);
-  }
-
   if (!banners.length) return null;
   const current = index % banners.length;
   const canStep = banners.length > 1;
@@ -82,52 +73,46 @@ export function HeroBanner() {
       aria-label="This month's combo offers"
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
-      onTouchStart={(event) => { touchX.current = event.touches[0].clientX; }}
+      onTouchStart={(event) => { touchX.current = event.touches[0].clientX; swiped.current = false; }}
       onTouchEnd={(event) => {
         if (touchX.current === null) return;
         const moved = event.changedTouches[0].clientX - touchX.current;
         touchX.current = null;
-        if (Math.abs(moved) > 40) step(moved < 0 ? 1 : -1);
+        if (Math.abs(moved) > 40) {
+          swiped.current = true;
+          step(moved < 0 ? 1 : -1);
+        }
       }}
     >
       {banners.map((banner, position) => {
-        const { pricePaise } = bannerOffer(banner);
-        const combo = Boolean(banner.product || pricePaise);
-        const classes = ['banner-slide', position === current && 'on', combo && 'combo'].filter(Boolean).join(' ');
+        const href = bannerHref(banner);
+        const classes = ['banner-slide', position === current && 'on'].filter(Boolean).join(' ');
         return (
-          <article
+          <Link
             key={banner.id}
+            to={href}
             className={classes}
             aria-hidden={position !== current}
-            aria-roledescription="slide"
-            aria-label={`${position + 1} of ${banners.length}`}
+            tabIndex={position === current ? 0 : -1}
+            aria-label={banner.title || banner.buttonLabel || 'Open offer'}
             onClick={(event) => {
-              if (event.target.closest('button, a')) return;
-              if (canStep) {
-                step(1);
-                return;
+              if (swiped.current) {
+                event.preventDefault();
+                swiped.current = false;
               }
-              if (combo) order(banner);
             }}
           >
             <div className={banner.mobileImage ? 'banner-media phone' : 'banner-media'}>
-              { !canStep && !combo && banner.link
-                ? (
-                  <Link to={banner.link.startsWith('/') ? banner.link : '/shop'} aria-label={banner.buttonLabel || banner.title || 'Open offer'}>
-                    <BannerArt src={banner.image} mobileSrc={banner.mobileImage} alt={banner.title || ''} />
-                  </Link>
-                )
-                : <BannerArt src={banner.image} mobileSrc={banner.mobileImage} alt={banner.title || ''} />}
-              <PriceMark banner={banner} onOrder={() => order(banner)} />
-              {!combo && <BannerButton banner={banner} />}
+              <BannerArt src={banner.image} mobileSrc={banner.mobileImage} alt="" />
+              <PriceMark banner={banner} />
             </div>
-          </article>
+          </Link>
         );
       })}
       {canStep && (
         <>
-          <button className="banner-arrow prev" type="button" aria-label="Previous banner" onClick={() => step(-1)}>‹</button>
-          <button className="banner-arrow next" type="button" aria-label="Next banner" onClick={() => step(1)}>›</button>
+          <button className="banner-arrow prev" type="button" aria-label="Previous banner" onClick={(event) => { event.preventDefault(); event.stopPropagation(); step(-1); }}>‹</button>
+          <button className="banner-arrow next" type="button" aria-label="Next banner" onClick={(event) => { event.preventDefault(); event.stopPropagation(); step(1); }}>›</button>
         </>
       )}
     </section>

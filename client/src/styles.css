@@ -49,7 +49,7 @@ main { flex: 1; padding-bottom: 48px; }
   top: 12px;
   z-index: 20;
   width: min(1240px, calc(100% - 40px));
-  margin: 14px auto 10px;
+  margin: 12px auto 0;
   border-radius: 28px;
   display: flex;
   flex-direction: column;
@@ -1302,14 +1302,14 @@ fieldset.plain:disabled { opacity: 0.7; }
 .banner-stage {
   position: relative;
   display: grid;
-  margin-top: 18px;
-  width: 100%;
+  margin-top: 10px;
+  width: min(1240px, calc(100% - 40px));
   min-height: 0;
   border-radius: 28px;
   overflow: hidden;
   color: #f7f3ea;
-  background: #101c18;
-  box-shadow: 0 28px 64px rgba(18, 36, 28, 0.26);
+  background: #f3ead8;
+  box-shadow: 0 28px 64px rgba(18, 36, 28, 0.18);
 }
 .banner-slide {
   grid-area: 1 / 1;
@@ -1320,6 +1320,9 @@ fieldset.plain:disabled { opacity: 0.7; }
   opacity: 0;
   visibility: hidden;
   pointer-events: none;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
   transition: opacity 0.5s ease, visibility 0.5s;
 }
 .banner-slide.on { opacity: 1; visibility: visible; z-index: 1; pointer-events: auto; }
@@ -1331,8 +1334,6 @@ fieldset.plain:disabled { opacity: 0.7; }
   transition: transform 0.2s ease, background 0.2s ease;
 }
 .banner-cta:hover { background: #f0d4a2; transform: translateY(-1px); }
-.banner-stage.steppable .banner-slide.on,
-.banner-slide.combo { cursor: pointer; }
 .banner-float { position: absolute; z-index: 3; right: 14px; bottom: 14px; min-height: 44px; width: auto; }
 .banner-price-tag {
   position: absolute;
@@ -1390,7 +1391,7 @@ fieldset.plain:disabled { opacity: 0.7; }
   width: 100%;
   line-height: 0;
   overflow: hidden;
-  background: #101c18;
+  background: #f3ead8;
   aspect-ratio: 16 / 7;
 }
 .banner-media a { display: block; }
@@ -1399,7 +1400,7 @@ fieldset.plain:disabled { opacity: 0.7; }
   display: block;
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   object-position: center;
 }
 .banner-controls {
@@ -1639,7 +1640,7 @@ fieldset.plain:disabled { opacity: 0.7; }
   .brand strong { font-size: 1.22rem; }
   .brand small { font-size: 0.68rem; }
   .mark { width: 40px; height: 40px; }
-  .banner-stage { border-radius: 22px; margin-top: 12px; }
+  .banner-stage { width: min(1240px, calc(100% - 20px)); border-radius: 22px; margin-top: 8px; }
   .banner-media { aspect-ratio: 16 / 7; }
   .banner-media.phone { aspect-ratio: 1 / 1; }
   .banner-float { right: 12px; bottom: 12px; }
