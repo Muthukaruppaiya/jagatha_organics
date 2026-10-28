@@ -7,6 +7,17 @@ const FALLBACK = [
   { src: '/reels/reel-3.mp4', id: 'reel-3', title: 'Festive kitchen sweets' },
 ];
 
+function takeClips(list) {
+  const next = [];
+  for (const item of list) {
+    const clip = { ...item, id: item.id || item.src };
+    if (!clip.src || next.some((entry) => entry.src === clip.src)) continue;
+    next.push(clip);
+    if (next.length === 3) break;
+  }
+  return next;
+}
+
 function useKitchenClips() {
   const [reels, setReels] = useState(FALLBACK);
 
@@ -14,8 +25,8 @@ function useKitchenClips() {
     api.videos()
       .then((list) => {
         if (!Array.isArray(list)) return;
-        const next = list.slice(0, 3).map((item) => ({ ...item, id: item.id || item.src }));
-        setReels(next.length ? next : []);
+        const fromShop = takeClips(list);
+        setReels(fromShop.length ? takeClips([...fromShop, ...FALLBACK]) : []);
       })
       .catch(() => {});
   }, []);
@@ -64,7 +75,7 @@ export function KitchenReel() {
         <p className="home-reel-kicker">From our kitchen</p>
         {clips.length > 1 && <span className="home-reel-count">{current + 1} / {clips.length}</span>}
       </div>
-      <div className="home-reel-stage">
+      <div className={`home-reel-stage${others.length ? '' : ' solo'}`}>
         <div className="home-reel-frame">
           <video
             ref={videoRef}
