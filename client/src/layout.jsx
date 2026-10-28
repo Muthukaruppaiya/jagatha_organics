@@ -2,7 +2,6 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import { useEffect, useLayoutEffect, useState } from 'react';
 import { useCart } from './cart.jsx';
 import { api, readCustomer, saveCustomer } from './api.js';
-import { FloatingVideo } from './reels.jsx';
 
 function Icon({ path }) {
   return (
@@ -154,7 +153,6 @@ export function StoreLayout() {
       <main key={location.pathname}>
         <Outlet />
       </main>
-      <FloatingVideo />
       <a
         className="wa-float"
         href={`https://wa.me/919884126032?text=${encodeURIComponent('Hello Jagatha Organics, I have a question.')}`}

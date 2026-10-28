@@ -8,90 +8,7 @@ const FALLBACK = [
   { src: '/reels/reel-1.mp4', id: 'reel-1', title: 'Back to a happy family' },
 ];
 
-function ReelCard({ reel }) {
-  const videoRef = useRef(null);
-  const [playing, setPlaying] = useState(false);
-
-  function play() {
-    videoRef.current?.play().then(() => setPlaying(true)).catch(() => {});
-  }
-
-  function stop() {
-    videoRef.current?.pause();
-    setPlaying(false);
-  }
-
-  return (
-    <button
-      type="button"
-      className={playing ? 'reel-card playing' : 'reel-card'}
-      aria-label={`${playing ? 'Pause' : 'Play'} ${reel.title}`}
-      onMouseEnter={play}
-      onMouseLeave={stop}
-      onClick={() => (playing ? stop() : play())}
-    >
-      <video
-        ref={videoRef}
-        src={reel.src}
-        muted
-        loop
-        playsInline
-        preload="metadata"
-        onLoadedData={(event) => {
-          if (event.currentTarget.currentTime < 0.2) event.currentTarget.currentTime = 0.6;
-        }}
-      />
-      <span className="reel-play" aria-hidden="true">{playing ? '❚❚' : '▶'}</span>
-      <em>{reel.title}</em>
-    </button>
-  );
-}
-
-export function FloatingVideo() {
-  const [clip, setClip] = useState(null);
-  const [open, setOpen] = useState(false);
-  const [hidden, setHidden] = useState(() => sessionStorage.getItem('jagatha-hide-float-video') === '1');
-
-  useEffect(() => {
-    api.videos()
-      .then((list) => {
-        if (Array.isArray(list) && list[0]?.src) {
-          setClip(list[0]);
-          return;
-        }
-        setClip({ src: '/reels/reel-2.mp4', title: 'Jagatha Organics' });
-      })
-      .catch(() => setClip({ src: '/reels/reel-2.mp4', title: 'Jagatha Organics' }));
-  }, []);
-
-  if (hidden || !clip) return null;
-
-  return (
-    <div className={open ? 'video-float open' : 'video-float'}>
-      <button
-        type="button"
-        className="video-float-close"
-        aria-label="Hide video"
-        onClick={() => {
-          sessionStorage.setItem('jagatha-hide-float-video', '1');
-          setHidden(true);
-        }}
-      >
-        ×
-      </button>
-      <button
-        type="button"
-        className="video-float-card"
-        aria-label={open ? 'Shrink video' : 'Watch video'}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <video src={clip.src} muted loop playsInline autoPlay preload="metadata" />
-      </button>
-    </div>
-  );
-}
-
-export function ReelStrip() {
+function useKitchenClips() {
   const [reels, setReels] = useState(FALLBACK);
 
   useEffect(() => {
@@ -103,17 +20,65 @@ export function ReelStrip() {
       .catch(() => {});
   }, []);
 
-  if (!reels.length) return null;
+  return reels;
+}
+
+export function KitchenReel() {
+  const reels = useKitchenClips();
+  const [current, setCurrent] = useState(0);
+  const videoRef = useRef(null);
+  const boxRef = useRef(null);
+  const reel = reels[current] || reels[0];
+
+  useEffect(() => {
+    const node = boxRef.current;
+    const video = videoRef.current;
+    if (!node || !video) return undefined;
+    const io = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) video.play().catch(() => {});
+      else video.pause();
+    }, { threshold: 0.35 });
+    io.observe(node);
+    return () => io.disconnect();
+  }, [reel?.src]);
+
+  if (!reel) return null;
 
   return (
-    <section className="wrap section reel-strip">
-      <div className="section-head">
-        <h2>From our kitchen</h2>
-        <a href="https://www.instagram.com/jagathaorganics/" target="_blank" rel="noreferrer">Instagram</a>
+    <aside className="home-reel" ref={boxRef}>
+      <div className="home-reel-frame">
+        <video
+          ref={videoRef}
+          key={reel.src}
+          src={reel.src}
+          muted
+          loop
+          playsInline
+          autoPlay
+          preload="metadata"
+        />
+        <span className="home-reel-live">Playing</span>
       </div>
-      <div className="reel-row">
-        {reels.slice(0, 4).map((reel) => <ReelCard key={reel.id} reel={reel} />)}
+      <div className="home-reel-copy">
+        <p className="eyebrow">From our kitchen</p>
+        <b>{reel.title || 'Jagatha Organics'}</b>
+        <a href="https://www.instagram.com/jagathaorganics/" target="_blank" rel="noreferrer">Watch more on Instagram</a>
       </div>
-    </section>
+      {reels.length > 1 && (
+        <div className="home-reel-thumbs">
+          {reels.slice(0, 4).map((item, index) => (
+            <button
+              key={item.id}
+              type="button"
+              className={index === current ? 'on' : ''}
+              aria-label={item.title || `Clip ${index + 1}`}
+              onClick={() => setCurrent(index)}
+            >
+              <video src={item.src} muted playsInline preload="metadata" />
+            </button>
+          ))}
+        </div>
+      )}
+    </aside>
   );
 }

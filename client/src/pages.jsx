@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api, inr, lookupPincode, readCustomer } from './api.js';
 import { useCart } from './cart.jsx';
 import { HeroBanner } from './banner.jsx';
+import { KitchenReel } from './reels.jsx';
 import { PriceDetails } from './checkout.jsx';
 
 function useCatalog() {
@@ -98,7 +99,18 @@ export function Home() {
 
       {loading && <p className="wrap status">Loading…</p>}
       {error && <p className="wrap status error">{error}</p>}
-      <Shelf title="Products" products={featured} more="/shop" />
+      <section className="wrap section home-stage">
+        <div className="section-head">
+          <h2>Products</h2>
+          <Link to="/shop">View all</Link>
+        </div>
+        <div className="home-split">
+          <div className="grid">
+            {featured.map((product) => <ProductCard key={product.slug} product={product} />)}
+          </div>
+          <KitchenReel />
+        </div>
+      </section>
 
       <section className="wrap section about glass">
         <img src="/media/laddu/navadhanya-laddu-2-1.jpg" alt="Navadhanya laddu" />
