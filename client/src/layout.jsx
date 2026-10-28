@@ -224,8 +224,6 @@ export function StoreLayout() {
             <a href="tel:+919884126032">+91 98841 26032</a>
             <a href="mailto:jagathaorganics@gmail.com">Email</a>
             <a href="https://wa.me/919884126032" target="_blank" rel="noreferrer">WhatsApp</a>
-            <Link to="/track">Track order</Link>
-            <Link to="/admin/login">Admin</Link>
           </nav>
         </div>
         <p className="fine">© {new Date().getFullYear()} Jagatha Organics · Pallikaranai, Chennai</p>
