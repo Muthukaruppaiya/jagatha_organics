@@ -3,17 +3,28 @@ import { createPortal } from 'react-dom';
 import { api } from './api.js';
 
 const INSTAGRAM = 'https://www.instagram.com/jagathaorganics/';
+const YOUTUBE = 'https://youtube.com/@jagathaorganics';
+
+function posterFor(src) {
+  if (typeof src !== 'string') return '';
+  if (src.startsWith('/reels/') && src.endsWith('.mp4')) return src.replace(/\.mp4$/, '.jpg');
+  return '';
+}
 
 const FALLBACK = [
-  { src: '/reels/reel-2.mp4', id: 'reel-2', title: 'No sugar, no jaggery protein bars' },
-  { src: '/reels/reel-4.mp4', id: 'reel-4', title: 'No sugar, no jaggery' },
-  { src: '/reels/reel-3.mp4', id: 'reel-3', title: 'Festive kitchen sweets' },
+  { src: '/reels/reel-2.mp4', id: 'reel-2', title: 'No sugar, no jaggery protein bars', poster: '/reels/reel-2.jpg' },
+  { src: '/reels/reel-4.mp4', id: 'reel-4', title: 'No sugar, no jaggery', poster: '/reels/reel-4.jpg' },
+  { src: '/reels/reel-3.mp4', id: 'reel-3', title: 'Festive kitchen sweets', poster: '/reels/reel-3.jpg' },
 ];
 
 function takeClips(list) {
   const next = [];
   for (const item of list) {
-    const clip = { ...item, id: item.id || item.src };
+    const clip = {
+      ...item,
+      id: item.id || item.src,
+      poster: item.poster || posterFor(item.src),
+    };
     if (!clip.src || next.some((entry) => entry.src === clip.src)) continue;
     next.push(clip);
     if (next.length === 3) break;
@@ -28,8 +39,7 @@ function useKitchenClips() {
     api.videos()
       .then((list) => {
         if (!Array.isArray(list)) return;
-        const fromShop = takeClips(list);
-        setReels(fromShop.length ? takeClips([...fromShop, ...FALLBACK]) : []);
+        setReels(takeClips([...list, ...FALLBACK]));
       })
       .catch(() => {});
   }, []);
@@ -41,6 +51,14 @@ function InstagramMark() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
       <path fill="currentColor" d="M8 3h8a5 5 0 0 1 5 5v8a5 5 0 0 1-5 5H8a5 5 0 0 1-5-5V8a5 5 0 0 1 5-5zm8 1.8H8A3.2 3.2 0 0 0 4.8 8v8A3.2 3.2 0 0 0 8 19.2h8A3.2 3.2 0 0 0 19.2 16V8A3.2 3.2 0 0 0 16 4.8zM12 8.2A3.8 3.8 0 1 1 8.2 12 3.8 3.8 0 0 1 12 8.2zm0 1.7A2.1 2.1 0 1 0 14.1 12 2.1 2.1 0 0 0 12 9.9zM17.4 7.1a.9.9 0 1 1-.9.9.9.9 0 0 1 .9-.9z" />
+    </svg>
+  );
+}
+
+function YouTubeMark() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M23 8.2a3.2 3.2 0 0 0-2.2-2.3C18.9 5.5 12 5.5 12 5.5s-6.9 0-8.8.4A3.2 3.2 0 0 0 1 8.2 33 33 0 0 0 .5 12a33 33 0 0 0 .5 3.8 3.2 3.2 0 0 0 2.2 2.3c1.9.4 8.8.4 8.8.4s6.9 0 8.8-.4A3.2 3.2 0 0 0 23 15.8 33 33 0 0 0 23.5 12 33 33 0 0 0 23 8.2zM9.8 15.5v-7l6.2 3.5z" />
     </svg>
   );
 }
@@ -198,6 +216,7 @@ export function KitchenReel() {
             ref={videoRef}
             key={reel.src}
             src={reel.src}
+            poster={reel.poster || undefined}
             muted
             loop
             playsInline
@@ -218,15 +237,12 @@ export function KitchenReel() {
                 aria-label={`Play ${item.title || `clip ${index + 1}`}`}
                 onClick={() => setCurrent(index)}
               >
-                <video
-                  src={item.src}
-                  muted
-                  playsInline
-                  preload="metadata"
-                  onLoadedData={(event) => {
-                    try { event.currentTarget.currentTime = 0.8; } catch { /* ignore */ }
-                  }}
-                />
+                {item.poster ? (
+                  <img src={item.poster} alt="" />
+                ) : (
+                  <video src={item.src} muted playsInline preload="auto" />
+                )}
+                <span className="home-reel-thumb-play" aria-hidden="true" />
               </button>
             ))}
           </div>
@@ -236,6 +252,10 @@ export function KitchenReel() {
         <a className="social-btn instagram" href={INSTAGRAM} target="_blank" rel="noreferrer" aria-label="Instagram">
           <InstagramMark />
           <span>Instagram</span>
+        </a>
+        <a className="social-btn youtube" href={YOUTUBE} target="_blank" rel="noreferrer" aria-label="YouTube">
+          <YouTubeMark />
+          <span>YouTube</span>
         </a>
       </div>
       {createPortal(
