@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { api } from './api.js';
 
 const INSTAGRAM = 'https://www.instagram.com/jagathaorganics/';
+const FACEBOOK = 'https://www.facebook.com/p/Jagatha-Organics-61572639235376/';
 const YOUTUBE = 'https://youtube.com/@jagathaorganics';
 
 function posterFor(src) {
@@ -55,6 +56,14 @@ function InstagramMark() {
   );
 }
 
+function FacebookMark() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path fill="currentColor" d="M14 8.2h2.7V5h-2.8c-2.5 0-4.2 1.7-4.2 4.4V12H7.5v3.3H9.7V22h3.5v-6.7h2.8l.5-3.3h-3.3V9.6c0-.8.4-1.4 1.3-1.4z" />
+    </svg>
+  );
+}
+
 function YouTubeMark() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -63,38 +72,8 @@ function YouTubeMark() {
   );
 }
 
-function prepFullPlayback(video, time) {
-  if (!video) return;
-  try { video.currentTime = time; } catch { /* ignore */ }
-  video.muted = false;
-  video.controls = true;
-  video.playsInline = false;
-  video.removeAttribute('playsinline');
-  video.removeAttribute('webkit-playsinline');
-  video.play().catch(() => {});
-}
-
-function tryNativeFullscreen(video) {
-  if (!video) return false;
-  try {
-    if (typeof video.webkitEnterFullscreen === 'function') {
-      video.webkitEnterFullscreen();
-      return true;
-    }
-    if (typeof video.webkitSetPresentationMode === 'function') {
-      video.webkitSetPresentationMode('fullscreen');
-      return true;
-    }
-    const request = video.requestFullscreen
-      || video.webkitRequestFullscreen
-      || video.mozRequestFullScreen
-      || video.msRequestFullscreen;
-    if (request) {
-      request.call(video);
-      return true;
-    }
-  } catch { /* overlay stays open */ }
-  return false;
+function slideVideo(root, index) {
+  return root?.querySelector(`[data-reel-slide="${index}"] video`) || null;
 }
 
 export function KitchenReel() {
@@ -102,8 +81,9 @@ export function KitchenReel() {
   const [current, setCurrent] = useState(0);
   const [open, setOpen] = useState(false);
   const videoRef = useRef(null);
-  const fullRef = useRef(null);
+  const fullBoxRef = useRef(null);
   const boxRef = useRef(null);
+  const touchRef = useRef({ x: 0, y: 0, t: 0 });
   const clips = reels.slice(0, 3);
   const reel = clips[current] || clips[0];
   const others = clips.map((item, index) => ({ item, index })).filter(({ index }) => index !== current);
@@ -141,13 +121,61 @@ export function KitchenReel() {
   useEffect(() => {
     if (!open) return undefined;
     videoRef.current?.pause();
-    fullRef.current?.play().catch(() => {});
+    const root = fullBoxRef.current;
+    root?.querySelector(`[data-reel-slide="${current}"]`)?.scrollIntoView({ block: 'start' });
     const onKey = (event) => {
       if (event.key === 'Escape') closeFull();
+      if (event.key === 'ArrowDown' || event.key === 'ArrowRight') {
+        event.preventDefault();
+        goClip(1);
+      }
+      if (event.key === 'ArrowUp' || event.key === 'ArrowLeft') {
+        event.preventDefault();
+        goClip(-1);
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [open, reel?.src]);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const root = fullBoxRef.current;
+    if (!root) return undefined;
+    const slides = [...root.querySelectorAll('[data-reel-slide]')];
+    const io = new IntersectionObserver((entries) => {
+      const hit = entries
+        .filter((entry) => entry.isIntersecting && entry.intersectionRatio >= 0.55)
+        .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (!hit) return;
+      const index = Number(hit.target.getAttribute('data-reel-slide'));
+      if (Number.isFinite(index)) setCurrent(index);
+    }, { root, threshold: [0.55, 0.75, 1] });
+    slides.forEach((slide) => io.observe(slide));
+    return () => io.disconnect();
+  }, [open, clips.length]);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const root = fullBoxRef.current;
+    clips.forEach((item, index) => {
+      const video = slideVideo(root, index);
+      if (!video) return;
+      video.loop = true;
+      video.playsInline = true;
+      video.controls = false;
+      if (index === current) {
+        video.muted = false;
+        video.play().catch(() => {
+          video.muted = true;
+          video.play().catch(() => {});
+        });
+      } else {
+        video.pause();
+      }
+    });
+    return undefined;
+  }, [open, current, clips.length, reel?.src]);
 
   function restorePreview() {
     const preview = videoRef.current;
@@ -160,39 +188,55 @@ export function KitchenReel() {
   }
 
   function closeFull() {
-    const video = fullRef.current;
+    const root = fullBoxRef.current;
+    root?.querySelectorAll('video').forEach((video) => video.pause());
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
-    if (video?.webkitDisplayingFullscreen) video.webkitExitFullscreen?.();
-    video?.pause();
     setOpen(false);
     restorePreview();
+  }
+
+  function goClip(delta) {
+    if (clips.length < 2) return;
+    setCurrent((index) => {
+      const next = (index + delta + clips.length) % clips.length;
+      requestAnimationFrame(() => {
+        fullBoxRef.current
+          ?.querySelector(`[data-reel-slide="${next}"]`)
+          ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+      return next;
+    });
   }
 
   function openFull(event) {
     event.preventDefault();
     event.stopPropagation();
-    const preview = videoRef.current;
-    const full = fullRef.current;
-    const time = preview?.currentTime || 0;
-
-    preview?.pause();
-    prepFullPlayback(full, time);
+    videoRef.current?.pause();
     setOpen(true);
+    try {
+      fullBoxRef.current?.requestFullscreen?.();
+    } catch { /* overlay already covers the phone */ }
+  }
 
-    preview?.addEventListener('webkitendfullscreen', closeFull, { once: true });
-    full?.addEventListener('webkitendfullscreen', closeFull, { once: true });
+  function onSwipeStart(event) {
+    const point = event.changedTouches?.[0] || event;
+    touchRef.current = { x: point.clientX, y: point.clientY, t: Date.now() };
+  }
 
-    if (preview && typeof preview.webkitEnterFullscreen === 'function') {
-      prepFullPlayback(preview, time);
-      tryNativeFullscreen(preview);
+  function onSwipeEnd(event) {
+    const point = event.changedTouches?.[0] || event;
+    const dx = point.clientX - touchRef.current.x;
+    const dy = point.clientY - touchRef.current.y;
+    const dt = Date.now() - touchRef.current.t;
+    if (dt > 900) return;
+    if (Math.abs(dx) < 28 && Math.abs(dy) < 28) {
+      const video = slideVideo(fullBoxRef.current, current);
+      if (!video) return;
+      if (video.paused) video.play().catch(() => {});
+      else video.pause();
       return;
     }
-
-    if (!tryNativeFullscreen(full) && !tryNativeFullscreen(preview)) {
-      try {
-        document.documentElement.requestFullscreen?.();
-      } catch { /* overlay already covers the phone */ }
-    }
+    if (Math.abs(dx) > 46 && Math.abs(dx) > Math.abs(dy)) goClip(dx < 0 ? 1 : -1);
   }
 
   if (!reel) return null;
@@ -253,6 +297,10 @@ export function KitchenReel() {
           <InstagramMark />
           <span>Instagram</span>
         </a>
+        <a className="social-btn facebook" href={FACEBOOK} target="_blank" rel="noreferrer" aria-label="Facebook">
+          <FacebookMark />
+          <span>Facebook</span>
+        </a>
         <a className="social-btn youtube" href={YOUTUBE} target="_blank" rel="noreferrer" aria-label="YouTube">
           <YouTubeMark />
           <span>YouTube</span>
@@ -260,20 +308,42 @@ export function KitchenReel() {
       </div>
       {createPortal(
         <div
+          ref={fullBoxRef}
           className={open ? 'reel-full on' : 'reel-full'}
           role="dialog"
           aria-modal={open}
           aria-hidden={!open}
           aria-label={reel.title || 'Kitchen video'}
+          onTouchStart={onSwipeStart}
+          onTouchEnd={onSwipeEnd}
         >
-          <button className="reel-full-close" type="button" onClick={closeFull}>Close</button>
-          <video
-            ref={fullRef}
-            src={reel.src}
-            loop
-            controls
-            preload="auto"
-          />
+          <button className="reel-full-close" type="button" onClick={closeFull} onTouchEnd={(event) => event.stopPropagation()}>Close</button>
+          {clips.length > 1 && (
+            <>
+              <button className="reel-full-nav prev" type="button" aria-label="Previous video" onClick={() => goClip(-1)} onTouchEnd={(event) => event.stopPropagation()} />
+              <button className="reel-full-nav next" type="button" aria-label="Next video" onClick={() => goClip(1)} onTouchEnd={(event) => event.stopPropagation()} />
+              <p className="reel-full-count">{current + 1} / {clips.length}</p>
+              <p className="reel-full-hint">Swipe for next</p>
+            </>
+          )}
+          {clips.map((item, index) => (
+            <div
+              key={item.id}
+              className="reel-full-slide"
+              data-reel-slide={index}
+            >
+              <video
+                src={item.src}
+                poster={item.poster || undefined}
+                loop
+                playsInline
+                preload={index === current ? 'auto' : 'metadata'}
+              />
+              <div className="reel-full-copy">
+                <b>{item.title || 'Jagatha Organics'}</b>
+              </div>
+            </div>
+          ))}
         </div>,
         document.body,
       )}
