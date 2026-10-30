@@ -707,17 +707,29 @@ main { flex: 1; padding-bottom: 48px; }
   position: fixed;
   inset: 0;
   z-index: 200;
-  display: none;
-  width: 100%;
+  display: grid;
+  place-items: center;
+  width: 100vw;
+  width: 100dvw;
   height: 100%;
+  height: 100svh;
   height: 100dvh;
   padding: 0;
+  margin: 0;
   background: #000;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
-.reel-full.on { display: grid; place-items: center; }
+.reel-full.on {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
 .reel-full video {
   width: 100%;
   height: 100%;
+  max-width: none;
   max-height: none;
   object-fit: contain;
   background: #000;

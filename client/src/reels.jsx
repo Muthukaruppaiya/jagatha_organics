@@ -45,18 +45,38 @@ function InstagramMark() {
   );
 }
 
-function enterNativeFullscreen(video) {
-  if (!video) return Promise.reject(new Error('no video'));
-  if (typeof video.webkitEnterFullscreen === 'function') {
-    video.webkitEnterFullscreen();
-    return Promise.resolve('webkit');
-  }
-  const request = video.requestFullscreen
-    || video.webkitRequestFullscreen
-    || video.mozRequestFullScreen
-    || video.msRequestFullscreen;
-  if (request) return Promise.resolve(request.call(video)).then(() => 'standard');
-  return Promise.reject(new Error('unsupported'));
+function prepFullPlayback(video, time) {
+  if (!video) return;
+  try { video.currentTime = time; } catch { /* ignore */ }
+  video.muted = false;
+  video.controls = true;
+  video.playsInline = false;
+  video.removeAttribute('playsinline');
+  video.removeAttribute('webkit-playsinline');
+  video.play().catch(() => {});
+}
+
+function tryNativeFullscreen(video) {
+  if (!video) return false;
+  try {
+    if (typeof video.webkitEnterFullscreen === 'function') {
+      video.webkitEnterFullscreen();
+      return true;
+    }
+    if (typeof video.webkitSetPresentationMode === 'function') {
+      video.webkitSetPresentationMode('fullscreen');
+      return true;
+    }
+    const request = video.requestFullscreen
+      || video.webkitRequestFullscreen
+      || video.mozRequestFullScreen
+      || video.msRequestFullscreen;
+    if (request) {
+      request.call(video);
+      return true;
+    }
+  } catch { /* overlay stays open */ }
+  return false;
 }
 
 export function KitchenReel() {
@@ -103,8 +123,7 @@ export function KitchenReel() {
   useEffect(() => {
     if (!open) return undefined;
     videoRef.current?.pause();
-    const video = fullRef.current;
-    video?.play().catch(() => {});
+    fullRef.current?.play().catch(() => {});
     const onKey = (event) => {
       if (event.key === 'Escape') closeFull();
     };
@@ -112,11 +131,23 @@ export function KitchenReel() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, reel?.src]);
 
+  function restorePreview() {
+    const preview = videoRef.current;
+    if (!preview) return;
+    preview.controls = false;
+    preview.muted = true;
+    preview.playsInline = true;
+    preview.setAttribute('playsinline', '');
+    preview.play().catch(() => {});
+  }
+
   function closeFull() {
     const video = fullRef.current;
     if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
     if (video?.webkitDisplayingFullscreen) video.webkitExitFullscreen?.();
+    video?.pause();
     setOpen(false);
+    restorePreview();
   }
 
   function openFull(event) {
@@ -125,51 +156,25 @@ export function KitchenReel() {
     const preview = videoRef.current;
     const full = fullRef.current;
     const time = preview?.currentTime || 0;
-    if (preview) preview.pause();
 
-    const start = (video) => {
-      if (!video) return Promise.reject(new Error('no video'));
-      try { video.currentTime = time; } catch { /* ignore */ }
-      video.muted = false;
-      video.controls = true;
-      video.playsInline = false;
-      video.removeAttribute('playsinline');
-      const playing = video.play().catch(() => {});
-      return enterNativeFullscreen(video).then(() => playing);
-    };
+    preview?.pause();
+    prepFullPlayback(full, time);
+    setOpen(true);
 
-    const onNativeEnd = () => {
-      preview?.addEventListener?.('webkitendfullscreen', restorePreview, { once: true });
-    };
-    const restorePreview = () => {
-      if (!preview) return;
-      preview.controls = false;
-      preview.muted = true;
-      preview.playsInline = true;
-      preview.setAttribute('playsinline', '');
-      preview.play().catch(() => {});
-      setOpen(false);
-    };
+    preview?.addEventListener('webkitendfullscreen', closeFull, { once: true });
+    full?.addEventListener('webkitendfullscreen', closeFull, { once: true });
 
-    preview?.addEventListener('webkitendfullscreen', restorePreview, { once: true });
-    preview?.addEventListener('fullscreenchange', restorePreview, { once: true });
-    document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement) restorePreview();
-    }, { once: true });
+    if (preview && typeof preview.webkitEnterFullscreen === 'function') {
+      prepFullPlayback(preview, time);
+      tryNativeFullscreen(preview);
+      return;
+    }
 
-    start(preview)
-      .then(onNativeEnd)
-      .catch(() => start(full)
-        .then(() => setOpen(true))
-        .catch(() => {
-          if (full) {
-            try { full.currentTime = time; } catch { /* ignore */ }
-            full.muted = false;
-            full.controls = true;
-            full.play().catch(() => {});
-          }
-          setOpen(true);
-        }));
+    if (!tryNativeFullscreen(full) && !tryNativeFullscreen(preview)) {
+      try {
+        document.documentElement.requestFullscreen?.();
+      } catch { /* overlay already covers the phone */ }
+    }
   }
 
   if (!reel) return null;
@@ -236,9 +241,9 @@ export function KitchenReel() {
       {createPortal(
         <div
           className={open ? 'reel-full on' : 'reel-full'}
-          hidden={!open}
           role="dialog"
-          aria-modal="true"
+          aria-modal={open}
+          aria-hidden={!open}
           aria-label={reel.title || 'Kitchen video'}
         >
           <button className="reel-full-close" type="button" onClick={closeFull}>Close</button>
