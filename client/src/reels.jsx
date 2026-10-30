@@ -45,6 +45,20 @@ function InstagramMark() {
   );
 }
 
+function enterNativeFullscreen(video) {
+  if (!video) return Promise.reject(new Error('no video'));
+  if (typeof video.webkitEnterFullscreen === 'function') {
+    video.webkitEnterFullscreen();
+    return Promise.resolve('webkit');
+  }
+  const request = video.requestFullscreen
+    || video.webkitRequestFullscreen
+    || video.mozRequestFullScreen
+    || video.msRequestFullscreen;
+  if (request) return Promise.resolve(request.call(video)).then(() => 'standard');
+  return Promise.reject(new Error('unsupported'));
+}
+
 export function KitchenReel() {
   const reels = useKitchenClips();
   const [current, setCurrent] = useState(0);
@@ -82,39 +96,83 @@ export function KitchenReel() {
   }, [clips.length, current, open]);
 
   useEffect(() => {
+    document.body.classList.toggle('reel-open', open);
+    return () => document.body.classList.remove('reel-open');
+  }, [open]);
+
+  useEffect(() => {
     if (!open) return undefined;
     videoRef.current?.pause();
     const video = fullRef.current;
-    if (video) {
-      video.play().catch(() => {});
-      const goFull = video.requestFullscreen || video.webkitRequestFullscreen;
-      if (goFull) goFull.call(video).catch(() => {});
-      else if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
-    }
+    video?.play().catch(() => {});
     const onKey = (event) => {
-      if (event.key === 'Escape') setOpen(false);
-    };
-    const onFull = () => {
-      if (!document.fullscreenElement && !document.webkitFullscreenElement) setOpen(false);
+      if (event.key === 'Escape') closeFull();
     };
     window.addEventListener('keydown', onKey);
-    document.addEventListener('fullscreenchange', onFull);
-    document.addEventListener('webkitfullscreenchange', onFull);
-    return () => {
-      window.removeEventListener('keydown', onKey);
-      document.removeEventListener('fullscreenchange', onFull);
-      document.removeEventListener('webkitfullscreenchange', onFull);
-      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
-    };
+    return () => window.removeEventListener('keydown', onKey);
   }, [open, reel?.src]);
 
-  if (!reel) return null;
+  function closeFull() {
+    const video = fullRef.current;
+    if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+    if (video?.webkitDisplayingFullscreen) video.webkitExitFullscreen?.();
+    setOpen(false);
+  }
 
   function openFull(event) {
     event.preventDefault();
     event.stopPropagation();
-    setOpen(true);
+    const preview = videoRef.current;
+    const full = fullRef.current;
+    const time = preview?.currentTime || 0;
+    if (preview) preview.pause();
+
+    const start = (video) => {
+      if (!video) return Promise.reject(new Error('no video'));
+      try { video.currentTime = time; } catch { /* ignore */ }
+      video.muted = false;
+      video.controls = true;
+      video.playsInline = false;
+      video.removeAttribute('playsinline');
+      const playing = video.play().catch(() => {});
+      return enterNativeFullscreen(video).then(() => playing);
+    };
+
+    const onNativeEnd = () => {
+      preview?.addEventListener?.('webkitendfullscreen', restorePreview, { once: true });
+    };
+    const restorePreview = () => {
+      if (!preview) return;
+      preview.controls = false;
+      preview.muted = true;
+      preview.playsInline = true;
+      preview.setAttribute('playsinline', '');
+      preview.play().catch(() => {});
+      setOpen(false);
+    };
+
+    preview?.addEventListener('webkitendfullscreen', restorePreview, { once: true });
+    preview?.addEventListener('fullscreenchange', restorePreview, { once: true });
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) restorePreview();
+    }, { once: true });
+
+    start(preview)
+      .then(onNativeEnd)
+      .catch(() => start(full)
+        .then(() => setOpen(true))
+        .catch(() => {
+          if (full) {
+            try { full.currentTime = time; } catch { /* ignore */ }
+            full.muted = false;
+            full.controls = true;
+            full.play().catch(() => {});
+          }
+          setOpen(true);
+        }));
   }
+
+  if (!reel) return null;
 
   return (
     <aside className="home-reel" ref={boxRef}>
@@ -123,7 +181,14 @@ export function KitchenReel() {
         {clips.length > 1 && <span className="home-reel-count">{current + 1} / {clips.length}</span>}
       </div>
       <div className={`home-reel-stage${others.length ? '' : ' solo'}`}>
-        <button type="button" className="home-reel-frame" onClick={openFull} aria-label="Open video full screen">
+        <div
+          className="home-reel-frame"
+          role="button"
+          tabIndex={0}
+          onClick={openFull}
+          onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openFull(event); }}
+          aria-label="Open video full screen"
+        >
           <video
             ref={videoRef}
             key={reel.src}
@@ -132,13 +197,13 @@ export function KitchenReel() {
             loop
             playsInline
             autoPlay
-            preload="metadata"
+            preload="auto"
           />
           <span className="home-reel-live">Playing</span>
           <div className="home-reel-copy">
             <b>{reel.title || 'Jagatha Organics'}</b>
           </div>
-        </button>
+        </div>
         {others.length > 0 && (
           <div className="home-reel-thumbs">
             {others.map(({ item, index }) => (
@@ -168,16 +233,21 @@ export function KitchenReel() {
           <span>Instagram</span>
         </a>
       </div>
-      {open && createPortal(
-        <div className="reel-full" role="dialog" aria-modal="true" aria-label={reel.title || 'Kitchen video'}>
-          <button className="reel-full-close" type="button" onClick={() => setOpen(false)}>Close</button>
+      {createPortal(
+        <div
+          className={open ? 'reel-full on' : 'reel-full'}
+          hidden={!open}
+          role="dialog"
+          aria-modal="true"
+          aria-label={reel.title || 'Kitchen video'}
+        >
+          <button className="reel-full-close" type="button" onClick={closeFull}>Close</button>
           <video
             ref={fullRef}
             src={reel.src}
-            autoPlay
-            controls
-            playsInline
             loop
+            controls
+            preload="auto"
           />
         </div>,
         document.body,
