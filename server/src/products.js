@@ -10,6 +10,18 @@ function fail(message) {
   return error;
 }
 
+function readSortOrder(value, { required = false } = {}) {
+  if (value === undefined || value === null || String(value).trim() === '') {
+    if (required) throw fail('Enter a sort number. Lower numbers show first.');
+    return null;
+  }
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > 9999) {
+    throw fail('Enter a sort number from 1 to 9999. Lower numbers show first.');
+  }
+  return n;
+}
+
 function slugify(value) {
   return String(value)
     .toLowerCase()
@@ -233,12 +245,13 @@ export function registerProductDesk(app, { requireStaff, allow }) {
     const saved = await inTransaction(res, next, async (client) => {
       const name = text(req.body?.name, 60);
       if (name.length < 2) throw fail('Enter the category name.');
+      const sortOrder = readSortOrder(req.body?.sortOrder);
       const slug = await uniqueSlug(client, 'categories', slugify(name));
       const { rows } = await client.query(
         `INSERT INTO categories (slug, name, blurb, sort_order)
-         VALUES ($1, $2, $3, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories))
+         VALUES ($1, $2, $3, COALESCE($4, (SELECT COALESCE(MAX(sort_order), 0) + 1 FROM categories)))
          RETURNING slug, name, blurb, sort_order`,
-        [slug, name, text(req.body?.blurb, 200)],
+        [slug, name, text(req.body?.blurb, 200), sortOrder],
       );
       return { slug: rows[0].slug, name: rows[0].name, blurb: rows[0].blurb, sortOrder: rows[0].sort_order, count: 0 };
     });
@@ -249,9 +262,13 @@ export function registerProductDesk(app, { requireStaff, allow }) {
     const saved = await inTransaction(res, next, async (client) => {
       const name = text(req.body?.name, 60);
       if (name.length < 2) throw fail('Enter the category name.');
+      const sortOrder = readSortOrder(req.body?.sortOrder);
       const { rows } = await client.query(
-        'UPDATE categories SET name = $2, blurb = $3 WHERE slug = $1 RETURNING slug, name, blurb, sort_order',
-        [req.params.slug, name, text(req.body?.blurb, 200)],
+        `UPDATE categories
+         SET name = $2, blurb = $3, sort_order = COALESCE($4, sort_order)
+         WHERE slug = $1
+         RETURNING slug, name, blurb, sort_order`,
+        [req.params.slug, name, text(req.body?.blurb, 200), sortOrder],
       );
       if (!rows[0]) throw fail('Category not found.');
       return { slug: rows[0].slug, name: rows[0].name, blurb: rows[0].blurb, sortOrder: rows[0].sort_order };

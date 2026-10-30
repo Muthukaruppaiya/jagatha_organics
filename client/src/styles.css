@@ -609,10 +609,18 @@ main { flex: 1; padding-bottom: 48px; }
 .home-reel-stage.solo { grid-template-columns: 1fr; }
 .home-reel-frame {
   position: relative;
+  display: block;
+  width: 100%;
+  padding: 0;
   overflow: hidden;
+  border: 0;
   border-radius: 20px;
   background: #10170f;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   min-height: 0;
+  cursor: pointer;
 }
 .home-reel-frame video {
   display: block;
@@ -688,13 +696,39 @@ main { flex: 1; padding-bottom: 48px; }
   object-fit: cover;
   pointer-events: none;
 }
-.home-reel-more {
-  margin: 0 4px 2px;
-  color: #e7c48a;
-  font-size: 0.84rem;
-  text-decoration: none;
-  width: max-content;
-  border-bottom: 1px solid rgba(231, 196, 138, 0.4);
+.home-reel-follow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 2px;
+}
+.home-reel-follow .social-btn { width: 34px; height: 34px; }
+.reel-full {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(8, 12, 9, 0.94);
+}
+.reel-full video {
+  width: min(100%, 960px);
+  max-height: 92vh;
+  background: #000;
+}
+.reel-full-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 1;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  color: var(--forest);
+  font-weight: 560;
 }
 
 @media (max-width: 1100px) {
@@ -707,7 +741,7 @@ main { flex: 1; padding-bottom: 48px; }
   .home-reel-stage { grid-template-columns: minmax(0, 1.2fr) minmax(108px, 0.78fr); }
   .home-reel-frame video { max-height: 240px; }
   .home-reel-copy b { font-size: 0.98rem; }
-  .home-reel-more { margin-right: 58px; }
+  .home-reel-follow { margin-right: 58px; }
 }
 .section-head a { color: var(--leaf); border-bottom: 1px solid rgba(62, 107, 79, 0.35); text-decoration: none; padding-bottom: 2px; }
 
@@ -1781,7 +1815,7 @@ fieldset.plain:disabled { opacity: 0.7; }
 .pack-table .muted { margin: 0; }
 .category-desk { border-radius: 22px; margin-bottom: 14px; }
 .category-desk h2 { font-size: 1.4rem; }
-.category-row { display: grid; grid-template-columns: minmax(0, 1fr) 110px auto 60px; gap: 10px; align-items: center; }
+.category-row { display: grid; grid-template-columns: minmax(0, 1fr) 88px 90px auto 60px; gap: 10px; align-items: center; }
 .category-row small { color: var(--muted); }
 
 @media (max-width: 760px) {

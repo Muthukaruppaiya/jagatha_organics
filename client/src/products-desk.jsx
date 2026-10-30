@@ -141,7 +141,9 @@ function ProductEditor({ product, categories, defaultCategory, onSaved, onRemove
 
 function CategoryDesk({ categories, onChange }) {
   const [names, setNames] = useState({});
+  const [sorts, setSorts] = useState({});
   const [fresh, setFresh] = useState('');
+  const [freshSort, setFreshSort] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -161,41 +163,65 @@ function CategoryDesk({ categories, onChange }) {
   return (
     <section className="glass form category-desk">
       <h2>Categories</h2>
-      {categories.map((category) => (
-        <div key={category.slug} className="category-row">
-          <input
-            value={names[category.slug] ?? category.name}
-            onChange={(event) => setNames((current) => ({ ...current, [category.slug]: event.target.value }))}
-            aria-label={`Name for ${category.name}`}
-          />
-          <small>{category.count} product{category.count === 1 ? '' : 's'}</small>
-          <button
-            type="button"
-            className="btn ghost tiny"
-            disabled={busy || (names[category.slug] ?? category.name) === category.name}
-            onClick={() => run(() => api.saveCategory(category.slug, { name: names[category.slug], blurb: category.blurb }))}
-          >
-            Rename
-          </button>
-          <button
-            type="button"
-            className="text"
-            disabled={busy || category.count > 0}
-            title={category.count > 0 ? 'Move or delete its products first' : ''}
-            onClick={() => window.confirm(`Delete the ${category.name} category?`) && run(() => api.removeCategory(category.slug))}
-          >
-            Delete
-          </button>
-        </div>
-      ))}
+      <p className="muted">Lower sort numbers show first on the shop.</p>
+      {categories.map((category) => {
+        const name = names[category.slug] ?? category.name;
+        const sortValue = sorts[category.slug] ?? String(category.sortOrder ?? '');
+        const dirty = name !== category.name || String(sortValue) !== String(category.sortOrder ?? '');
+        return (
+          <div key={category.slug} className="category-row">
+            <input
+              value={name}
+              onChange={(event) => setNames((current) => ({ ...current, [category.slug]: event.target.value }))}
+              aria-label={`Name for ${category.name}`}
+            />
+            <input
+              value={sortValue}
+              onChange={(event) => setSorts((current) => ({ ...current, [category.slug]: event.target.value.replace(/\D/g, '').slice(0, 4) }))}
+              inputMode="numeric"
+              aria-label={`Sort number for ${category.name}`}
+              placeholder="Sort"
+            />
+            <small>{category.count} product{category.count === 1 ? '' : 's'}</small>
+            <button
+              type="button"
+              className="btn ghost tiny"
+              disabled={busy || !dirty}
+              onClick={() => run(() => api.saveCategory(category.slug, { name, blurb: category.blurb, sortOrder: Number(sortValue) }))}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className="text"
+              disabled={busy || category.count > 0}
+              title={category.count > 0 ? 'Move or delete its products first' : ''}
+              onClick={() => window.confirm(`Delete the ${category.name} category?`) && run(() => api.removeCategory(category.slug))}
+            >
+              Delete
+            </button>
+          </div>
+        );
+      })}
       <div className="category-row">
         <input value={fresh} onChange={(event) => setFresh(event.target.value)} placeholder="New category name" aria-label="New category name" />
+        <input
+          value={freshSort}
+          onChange={(event) => setFreshSort(event.target.value.replace(/\D/g, '').slice(0, 4))}
+          inputMode="numeric"
+          placeholder="Sort no."
+          aria-label="Sort number"
+        />
         <span />
         <button
           type="button"
           className="btn tiny"
           disabled={busy || fresh.trim().length < 2}
-          onClick={() => run(async () => { await api.saveCategory(null, { name: fresh }); setFresh(''); })}
+          onClick={() => run(async () => {
+            await api.saveCategory(null, { name: fresh, sortOrder: freshSort ? Number(freshSort) : undefined });
+            setFresh('');
+            setFreshSort('');
+          })}
         >
           Add category
         </button>
